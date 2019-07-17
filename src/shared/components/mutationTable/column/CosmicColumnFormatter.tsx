@@ -1,5 +1,6 @@
 import * as React from 'react';
-import DefaultTooltip from 'shared/components/defaultTooltip/DefaultTooltip';
+import DefaultTooltip from 'public-lib/components/defaultTooltip/DefaultTooltip';
+import {getProteinPositionFromProteinChange} from "public-lib/lib/ProteinChangeUtils";
 import * as _ from 'lodash';
 import {Mutation} from "shared/api/generated/CBioPortalAPI";
 import {CosmicMutation} from "shared/api/generated/CBioPortalAPIInternal";
@@ -45,13 +46,10 @@ export default class CosmicColumnFormatter
 
     public static extractPosition(proteinChange:string)
     {
-        const position:RegExp = /[0-9]+/g;
-        const matched:RegExpMatchArray|null = proteinChange.match(position);
-
-        if (matched) {
-            return matched[0];
-        }
-        else {
+        const pos = getProteinPositionFromProteinChange(proteinChange);
+        if (pos) {
+            return pos.start;
+        } else {
             return null;
         }
     }

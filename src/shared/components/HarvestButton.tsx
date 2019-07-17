@@ -1,7 +1,7 @@
 import * as React from 'react';
 import {localStorageUtil} from "../lib/HarvestUtils";
 import FontAwesome from "react-fontawesome";
-import DefaultTooltip from "./defaultTooltip/DefaultTooltip";
+import DefaultTooltip from "public-lib/components/defaultTooltip/DefaultTooltip";
 
 
 interface IHarvestSampleButtonState {
@@ -16,13 +16,13 @@ interface IHarvestSampleButtonProps {
 
 const addButton:IHarvestSampleButtonState = {
     icon: 'minus-circle',
-    tooltip: 'Delete',
+    tooltip: 'Delete sample from harvest cart',
     operation: 'delete'
 };
 
 const deleteButton:IHarvestSampleButtonState = {
     icon: 'plus-circle',
-    tooltip: 'Add',
+    tooltip: 'Add sample to harvest cart',
     operation: 'add'
 };
 

@@ -3,7 +3,7 @@ import {MolecularProfile, Mutation, SampleIdentifier} from "shared/api/generated
 import {germlineMutationRate, somaticMutationRate} from "shared/lib/MutationUtils";
 import {MobxPromise} from "mobxpromise";
 import {observer} from "mobx-react";
-import DefaultTooltip from "shared/components/defaultTooltip/DefaultTooltip";
+import DefaultTooltip from "public-lib/components/defaultTooltip/DefaultTooltip";
 
 export interface IMutationRateSummaryProps {
     mutations: Mutation[];
@@ -33,7 +33,7 @@ export default class MutationRateSummary extends React.Component<IMutationRateSu
                     placement="right"
                     overlay={(<span>{'Percentage of samples with a somatic mutation in ' + this.props.hugoGeneSymbol}</span>)}
                 >
-                    <i className='glyphicon glyphicon-info-sign' style={{'marginLeft':5}}></i>
+                    <i className="fa fa-info-circle" style={{'marginLeft':5}}></i>
                 </DefaultTooltip>
             </div>
         );
@@ -66,7 +66,7 @@ export default class MutationRateSummary extends React.Component<IMutationRateSu
                     placement="right"
                     overlay={(<span>{'Percentage of samples with a germline mutation in ' + this.props.hugoGeneSymbol}</span>)}
                 >
-                    <i className='glyphicon glyphicon-info-sign' style={{'marginLeft':5}}></i>
+                    <i className="fa fa-info-circle" style={{'marginLeft':5}}></i>
                 </DefaultTooltip>
             </div>
         );

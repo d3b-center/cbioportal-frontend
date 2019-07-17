@@ -1,67 +1,43 @@
 .QueryAndDownloadTabs {
 
-  :global(ul.nav) {
-    margin-top:0 !important;
-    margin-bottom:0 !important;
+  position:relative;
+
+  :global(.citationRule) {
+    position:absolute;
+    z-index:10;
+    top:10px;
+    right:20px;
+    font-size:12px;
   }
 
-  :global(ul.nav.nav-tabs li) {
-    font-size: 85%;
-    font-weight: 500;
-    text-transform: uppercase;
-  }
-
-  :global(ul.nav.nav-tabs li.active a) {
-    background: #fcfcfc;
-    border-top: 2px solid #1982b8;
-    color: #333;
-    font-weight: 500;
-  }
-
-  :global(ul.nav.nav-tabs li a) {
-    background: $lightGrey;
-    border-top: 2px solid #eee;
-    border-top-left-radius: 2px;
-    border-top-right-radius: 2px;
-    color: $darkGrey;
-    min-width: 150px;
-    font-weight: 400;
-    text-align: center;
-    transition: all 0.2s ease-in-out;
-  }  
-
-  :global(ul.nav.nav-tabs li:not(.active) a:hover) {
-    color: #333;
-  }
-
-  .QueryContainer {
-    background: #fcfcfc;
-    border: 1px solid #ddd;
-    border-top: none;
-    padding: 10px;
-    font-size: 85%;
-    line-height: normal;
-
-    :global(.Select-control) {
-      border: 1px solid #ddd !important;
-      border-radius: 2px !important;
-    }
-  }
 }
 
 .QueryContainer {
 
-  div:global(.Select) {
-    div:global(.Select-value) > span:global(.Select-value-label),
-    span:global(.Select-value-label) > span,
-    div:global(.Select-option) > span {
-      display: inline-block;
-      width: 100%;
-    }
-  }
 
   :global(.sectionLabel) {
-    width:246px;
+    min-width:246px;
+  }
+
+  &:global(.forkedMode) {
+    //> div:nth-child(2) {
+    //  margin-top:0px !important;
+    //}
+
+    .forkedButtons {
+      margin-top:10px;
+      justify-content: center;
+      align-items: center;
+      > div {   // we have to use span to fix issue with mouseover events and disabled button controls
+
+      }
+      a {
+        pointer-events:all !important;
+        margin:0 10px;
+      }
+
+    }
+
   }
 
   label {
@@ -80,10 +56,15 @@
   }
 }
 
+.CancerStudySelector {
+  height:400px;
+}
+
 .CancerStudySelector,
 .MolecularProfileSelector,
 .DataTypePrioritySelector,
 .CaseSetSelector,
+.StudySelection,
 .GeneSetSelector {
   background: #fff;
   padding: 10px;
@@ -140,7 +121,6 @@ div.SelectedStudiesWindow {
   position: relative;
   overflow: hidden;
   user-select: none;
-  height: 420px;
   padding: 5px 0 0 0;
 
   label {
@@ -199,17 +179,13 @@ div.SelectedStudiesWindow {
 
   div.cancerTypeListContainer,
   div.cancerStudyListContainer {
-  }
-
-  div.cancerTypeListContainer {
     overflow-y: scroll;
     overflow-x: auto;
+    height:100%;
   }
 
   div.cancerStudyListContainer {
-    overflow-y: scroll;
-    overflow-x: auto;
-    flex: 1;
+    flex:1;
     &:only-child {
       padding: 10px 10px 10px 10px;
     }
@@ -363,7 +339,7 @@ div.SelectedStudiesWindow {
     div {
       padding: 0 0 0 2px;
     }
-    
+
     :global(.spinner) {
       float: right;
     }
@@ -662,4 +638,29 @@ div.submitRow {
 
 .StudyTypeSelector {
   width: 150px;
+}
+
+.learnOql {
+  display:inline-block;
+  margin-top:25px;
+}
+
+.quickSelect {
+  display:flex;
+  align-items:center;
+  button {
+    margin-left:10px;
+  }
+}
+
+.StudySelection {
+  align-items:center;
+}
+
+.studyName {
+  border-right:1px dashed $borderColor;
+  padding-right:10px;
+  margin-right:10px;
+  display:inline-block;
+
 }

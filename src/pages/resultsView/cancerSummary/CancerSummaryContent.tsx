@@ -1,32 +1,38 @@
 import * as React from "react";
 import * as _ from 'lodash';
-import {Checkbox, ButtonGroup, Panel, Radio} from 'react-bootstrap';
-import {computed, observable} from "mobx";
+import {Checkbox, ButtonGroup, Radio} from 'react-bootstrap';
+import {computed, observable, action} from "mobx";
 import {observer} from "mobx-react";
 import Slider from 'react-rangeslider';
-import {FormGroup, ControlLabel, FormControl} from 'react-bootstrap';
-import jsPDF from 'jspdf';
+import { ControlLabel, FormControl } from 'react-bootstrap';
 import {If, Then, Else} from 'react-if';
 import classnames from 'classnames';
-import SvgSaver from 'svgsaver';
 
 import 'react-select/dist/react-select.css';
 import 'react-rangeslider/lib/index.css';
 
 import { CancerSummaryChart } from "./CancerSummaryChart";
+import {WindowWidthBox} from "../../../shared/components/WindowWidthBox/WindowWidthBox";
 
 export const OrderedAlterationLabelMap: Record<keyof IAlterationCountMap, string> = {
     multiple: "Multiple Alterations",
-    protExpressionDown: "Protein Downregulation",
-    protExpressionUp: "Protein Upregulation",
-    mrnaExpressionDown: "mRNA Downregulation",
-    mrnaExpressionUp: "mRNA Upregulation",
+    protExpressionLow: "Protein Low",
+    protExpressionHigh: "Protein High",
+    mrnaExpressionLow: "mRNA Low",
+    mrnaExpressionHigh: "mRNA High",
     hetloss: "Shallow Deletion",
     homdel: "Deep Deletion",
     gain: "Gain",
     amp: "Amplification",
     fusion: "Fusion",
     mutated: "Mutation"
+};
+
+export const AlterationTypeToDataTypeLabel: {[id:string]:string} = {
+    protein: "Protein data",
+    expression: "mRNA data",
+    cna: "CNA data",
+    mutation: "Mutation data"
 };
 
 const alterationToColor: Record<keyof IAlterationCountMap, string> = {
@@ -36,10 +42,10 @@ const alterationToColor: Record<keyof IAlterationCountMap, string> = {
     hetloss: "#8fd8d8",
     gain: "rgb(255,182,193)",
     fusion: "#8B00C9",
-    mrnaExpressionUp: "#FF989A",
-    mrnaExpressionDown: "#529AC8",
-    protExpressionUp: "#FF989A",
-    protExpressionDown: "#E0FFFF",
+    mrnaExpressionHigh: "#FF989A",
+    mrnaExpressionLow: "#529AC8",
+    protExpressionHigh: "#FF989A",
+    protExpressionLow: "#E0FFFF",
     multiple: "#666"
 };
 
@@ -51,20 +57,32 @@ export interface IAlterationCountMap {
     hetloss: number;
     gain: number;
     fusion: number;
-    mrnaExpressionUp: number;
-    mrnaExpressionDown: number;
-    protExpressionUp: number;
-    protExpressionDown: number;
+    mrnaExpressionHigh: number;
+    mrnaExpressionLow: number;
+    protExpressionHigh: number;
+    protExpressionLow: number;
     multiple: number;
 };
 
 
 export interface IAlterationData {
     alterationTotal: number;
-    sampleTotal: number;
+    profiledSampleTotal: number;
     alterationTypeCounts: IAlterationCountMap;
     alteredSampleCount: number;
     parentCancerType: string;
+    profiledSamplesCounts: {
+        mutation: number,
+        cna: number,
+        expression: number,
+        protein: number
+    },
+    notProfiledSamplesCounts: {
+        mutation: number,
+        cna: number,
+        expression: number,
+        protein: number
+    }
 }
 
 
@@ -73,7 +91,14 @@ export interface ICancerSummaryChartData {
     data: {
         x: string,
         y: number,
-        alterationType: string }[][];
+        alterationType: string
+    }[][];
+    alterationTypeDataCounts: {
+        x: string,
+        y: string,
+        profiledCount: number,
+        notProfiledCount: number
+    }[];
     labels: string[];
     maxPercentage: number;
     maxAbsoluteCount: number;
@@ -106,22 +131,23 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
 
     private inputYAxisEl: any;
     private inputXAxisEl: any;
+    private totalCasesMinDefaultValue = 10;
     @observable private tempAltCasesInputValue = 0;
-    @observable private tempTotalCasesInputValue = 0;
+    @observable private tempTotalCasesInputValue = this.totalCasesMin;
     @observable private pngAnchor = '';
     @observable private pdf: { anchor: string; width: number; height: number } = {anchor: '', width: 0, height: 0};
-    @observable private showControls = false;
+    @observable private showControls = true; // 9/2018 we will always show controls
     @observable private hideGenomicAlterations = false;
     @observable public yAxis: 'alt-freq' | 'abs-count' = 'alt-freq';
     @observable private xAxis: 'y-axis' | 'x-axis' = 'y-axis';
     @observable public altCasesValue = 0;
-    @observable public totalCasesValue = 0;
-    @observable public tempTotalCasesValue = 0;
+    @observable public totalCasesValue = this.totalCasesMin;
+    @observable public tempTotalCasesValue = this.totalCasesMin;
     @observable public tempAltCasesValue = 0;
     @observable private viewCountsByCancerSubType = false;
 
     constructor(props: ICancerSummaryContentProps) {
-        super();
+        super(props);
         this.handleYAxisChange = this.handleYAxisChange.bind(this);
         this.handleXAxisChange = this.handleXAxisChange.bind(this);
         this.handleGenomicCheckboxChange = this.handleGenomicCheckboxChange.bind(this);
@@ -134,18 +160,29 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
         this.handleAltInputKeyPress = this.handleAltInputKeyPress.bind(this);
         this.handleTotalInputChange = this.handleTotalInputChange.bind(this);
         this.handleTotalInputKeyPress = this.handleTotalInputKeyPress.bind(this);
-        this.toggleShowControls = this.toggleShowControls.bind(this);
+        //this.toggleShowControls = this.toggleShowControls.bind(this);
         this.setPngAnchor = this.setPngAnchor.bind(this);
-        this.downloadSvg = this.downloadSvg.bind(this);
-        this.downloadPng = this.downloadPng.bind(this);
     }
 
-    private svgsaver = new SvgSaver();
+    componentDidMount() {
+        // initialize the slider value after min and max computed
+        this.initializeSliderValue();
+    }
 
     private chartComponent:any;
 
     get countsData() {
         return this.props.groupedAlterationData;
+    }
+
+    get groupKeysSorted() {
+        const { dir, sorter } = this.determineSorterAndDirection();
+
+        const groupKeysSorted = _.chain(this.countsData)
+            .keys()
+            .orderBy(sorter, [dir])
+            .value();
+        return groupKeysSorted;
     }
 
     public getYValue(count:number, total:number) {
@@ -155,7 +192,7 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
     determineSorterAndDirection(): { sorter:(item:any)=>number|string, dir:'asc'| 'desc' } {
         const sortByPercentage = (key:string) => {
             const alterationCountsData: IAlterationData = this.countsData[key];
-            return alterationCountsData.alteredSampleCount / alterationCountsData.sampleTotal;
+            return alterationCountsData.alteredSampleCount / alterationCountsData.profiledSampleTotal;
         };
         const sortByAbsoluteCount = (key:string) => {
             const alterationCountsData: IAlterationData = this.countsData[key];
@@ -176,17 +213,46 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
         return { sorter, dir };
     }
 
+    @computed get alterationTypeDataCounts() {
+        const scatterPlotData: { x: string, y: string, profiledCount: number, notProfiledCount: number }[] = [];
+        _.forEach(this.groupKeysSorted, groupKey => {
+            const alterationData = this.countsData[groupKey];
+            const totalProfiledSamplesCount = _.chain(alterationData.profiledSamplesCounts as any).values().sum().value();
+            const alterationPercentage = calculatePercentage(alterationData.alteredSampleCount, alterationData.profiledSampleTotal);;
+
+            let meetsAlterationThreshold;
+            if (this.yAxis === "abs-count") {
+                meetsAlterationThreshold = alterationData.alteredSampleCount >= this.tempAltCasesValue;
+            } else {
+                meetsAlterationThreshold = alterationPercentage >= this.tempAltCasesValue;
+            }
+
+            const meetsSampleTotalThreshold = alterationData.profiledSampleTotal >= this.totalCasesValue;
+
+            // if we don't meet the threshold set by the user in the custom controls, don't put data in (default 0)
+            //hide scatter point if there are no profiled samples in the group
+            if (totalProfiledSamplesCount > 0 && meetsAlterationThreshold && meetsSampleTotalThreshold) {
+                _.forEach(_.keys(AlterationTypeToDataTypeLabel), alterationType => {
+                    const profiledCount = (alterationData.profiledSamplesCounts as any)[alterationType];
+                    const notProfiledCount = (alterationData.notProfiledSamplesCounts as any)[alterationType];
+                    if ((profiledCount + notProfiledCount) > 0) {
+                        scatterPlotData.push({
+                            x: (this.props.labelTransformer) ? this.props.labelTransformer(groupKey) : groupKey,
+                            y: AlterationTypeToDataTypeLabel[alterationType],
+                            profiledCount,
+                            notProfiledCount
+                        });
+                    }
+                });
+            }
+        });
+        return scatterPlotData;
+    }
+
     @computed
     get chartData(): ICancerSummaryChartData  {
 
-        const { dir, sorter } = this.determineSorterAndDirection();
-
         const representedAlterations: { [alterationType: string]: boolean } = {};
-   
-        const groupKeysSorted = _.chain(this.countsData)
-            .keys()
-            .orderBy(sorter, [dir])
-            .value();
 
         let maxPercentage = 0;
         let maxAbsoluteCount = 0;
@@ -196,38 +262,34 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
 
         // for each alteration type stack, we need the collection of different group types
         const retData = _.map(OrderedAlterationLabelMap, (alterationLabel, alterationKey) => {
-            return _.reduce(groupKeysSorted, (memo, groupKey) => {
+            return _.reduce(this.groupKeysSorted, (memo, groupKey) => {
                 // each of these represents a bucket along x-axis (e.g. cancer type or cancer study)
                 const alterationData = this.countsData[groupKey];
+                const totalProfiledSamplesCount = _.chain(alterationData.profiledSamplesCounts as any).values().sum().value();
 
-                const alterationPercentage = calculatePercentage(alterationData.alteredSampleCount,alterationData.sampleTotal);
+                const alterationPercentage = calculatePercentage(alterationData.alteredSampleCount,alterationData.profiledSampleTotal);;
 
-                //console.log("me", this.tempAltCasesValue);
-
-                let meetsAlterationThreshold;
-
-                if (this.yAxis === "abs-count") {
-                    meetsAlterationThreshold = alterationData.alteredSampleCount >= this.tempAltCasesValue;
-                } else {
-                    meetsAlterationThreshold = alterationPercentage >= this.tempAltCasesValue;
-                }
-
-                const meetsSampleTotalThreshold = alterationData.sampleTotal >= this.totalCasesValue;
-
-                // if we don't meet the threshold set by the user in the custom controls, don't put data in (default 0)
-                if (meetsAlterationThreshold && meetsSampleTotalThreshold) {
-
-                    // now we push label into collection
-                    if (this.props.labelTransformer) {
-                        labels.push(this.props.labelTransformer(groupKey))
+                    let meetsAlterationThreshold;
+    
+                    if (this.yAxis === "abs-count") {
+                        meetsAlterationThreshold = alterationData.alteredSampleCount >= this.tempAltCasesValue;
                     } else {
-                        labels.push(groupKey)
+                        meetsAlterationThreshold = alterationPercentage >= this.tempAltCasesValue;
                     }
+    
+                    const meetsSampleTotalThreshold = alterationData.profiledSampleTotal >= this.totalCasesValue;
+
+                //hide bar if there are no profiled samples in the group
+                if(totalProfiledSamplesCount > 0 && meetsAlterationThreshold && meetsSampleTotalThreshold) {
+                    // if we don't meet the threshold set by the user in the custom controls, don't put data in (default 0)
+                    // now we push label into collection
+                    const label = this.props.labelTransformer ? this.props.labelTransformer(groupKey) : groupKey;
+                    labels.push(label);
 
                     // update maxes if item exceeds memoized
                     maxPercentage = (alterationPercentage > maxPercentage) ? alterationPercentage : maxPercentage;
                     maxAbsoluteCount = (alterationData.alteredSampleCount > maxAbsoluteCount) ? alterationData.alteredSampleCount : maxAbsoluteCount;
-                    maxSampleCount = (alterationData.sampleTotal > maxSampleCount) ? alterationData.sampleTotal : maxSampleCount;
+                    maxSampleCount = (alterationData.profiledSampleTotal > maxSampleCount) ? alterationData.profiledSampleTotal : maxSampleCount;
 
                     const alterationCount = (alterationData.alterationTypeCounts as any)[alterationKey];
 
@@ -239,17 +301,17 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
 
                     memo.push({
                         alterationType: alterationKey,
-                        x: groupKey,
-                        y: this.getYValue(alterationCount, alterationData.sampleTotal)
+                        x: label,
+                        xKey: groupKey,
+                        y: this.getYValue(alterationCount, alterationData.profiledSampleTotal)
                     });
                 }
 
                 return memo;
-            }, [] as { x: string, y: number, alterationType: string }[]);
+            }, [] as { x: string, y: number, xKey:string, alterationType: string }[]);
         });
 
-        return { labels:_.uniq(labels), data: retData, representedAlterations, maxPercentage , maxAbsoluteCount, maxSampleCount };
-
+        return { labels: _.uniq(labels), data: retData, alterationTypeDataCounts: this.alterationTypeDataCounts, representedAlterations, maxPercentage, maxAbsoluteCount, maxSampleCount };
     }
 
     @computed
@@ -263,10 +325,29 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
     }
 
     @computed
+    private get totalCasesMin() {
+        if (this.totalCasesMax > 10) {
+            return this.totalCasesMinDefaultValue;
+        } else {
+            return 0;
+        }
+    }
+
+    @computed
     private get hasAlterations() {
         return _.reduce(this.countsData, (count, alterationData: IAlterationData) => {
             return count + alterationData.alterationTotal;
         }, 0) > 0;
+    }
+
+    @computed
+    private get totalCaseChanged() {
+        return this.totalCasesValue > 0;
+    }
+
+    @computed
+    private get altCaseChanged() {
+        return this.altCasesValue > 0;
     }
 
     private transformLabel(str: string) {
@@ -318,15 +399,19 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
         }
     }
 
+    @action
     private handleTotalInputKeyPress(target: any) {
         if (target.charCode === 13) {
             if (isNaN(this.tempTotalCasesInputValue)) {
-                this.tempTotalCasesInputValue = 0;
-                return;
+                this.tempTotalCasesInputValue = this.totalCasesMin;
+            } else if (this.tempTotalCasesInputValue > this.totalCasesMax) {
+                this.tempTotalCasesInputValue = this.totalCasesMax;
+                this.tempTotalCasesValue = this.totalCasesMax;
+            } else {
+                //removes leading 0s
+                this.tempTotalCasesInputValue = Number(this.tempTotalCasesInputValue);
+                this.tempTotalCasesValue = this.tempTotalCasesInputValue;
             }
-            //removes leading 0s
-            this.tempTotalCasesInputValue = Number(this.tempTotalCasesInputValue);
-            this.tempTotalCasesValue = this.tempTotalCasesInputValue;
             this.handleTotalSliderChangeComplete();
         }
     }
@@ -347,20 +432,22 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
         this.totalCasesValue = this.tempTotalCasesValue;
     }
 
-    private toggleShowControls() {
-        this.showControls = !this.showControls;
+    // private toggleShowControls() {
+    //     this.showControls = !this.showControls;
+    // }
+
+    @action
+    private initializeSliderValue() {
+        this.tempAltCasesValue = 0;
+        this.tempAltCasesInputValue = 0;
+        this.altCasesValue = 0;
+        this.tempTotalCasesValue = this.totalCasesMin;
+        this.tempTotalCasesInputValue = this.totalCasesMin;
+        this.totalCasesValue = this.totalCasesMin;
     }
 
     public setPngAnchor(href: string) {
         this.pngAnchor = href;
-    }
-
-    private downloadSvg() {
-        this.svgsaver.asSvg(this.chartComponent.svgContainer.firstChild, 'cancer_types_summary' + '.svg');
-    }
-
-    private downloadPng() {
-        this.svgsaver.asPng(this.chartComponent.svgContainer.firstChild, 'cancer_types_summary' + '.png');
     }
 
     @computed public get controls(){
@@ -369,88 +456,93 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
 
         return (
 
-            <div style={{display: 'flex'}} className="cancer-summary--form-controls">
+            <div className="cancer-summary--form-controls">
 
-                <div>
-                    <FormGroup>
-                        <ControlLabel>Y-Axis Value:</ControlLabel>
-                        <FormControl componentClass="select" data-test="cancerSummaryYAxisSelect" onChange={this.handleYAxisChange}
-                                     ref={(el: any) => this.inputYAxisEl = el}>
-                            <option value="alt-freq">Alteration Frequency</option>
-                            <option value="abs-count">Absolute Counts</option>
-                        </FormControl>
-                    </FormGroup>
-                    <FormGroup>
-                        <ControlLabel>Sort X-Axis By:</ControlLabel>
-                        <FormControl componentClass="select" data-test="cancerSummaryXAxisSelect" onChange={this.handleXAxisChange}
-                                     ref={(el: any) => this.inputXAxisEl = el}>
-                            <option value="y-axis">Y-Axis Values</option>
-                            <option value="x-axis">Alphabetically</option>
-                        </FormControl>
-                    </FormGroup>
-                </div>
-
-                <div style={{width: 400}}>
-                    <div className="slider-holder">
-                        <FormGroup>
+                <table>
+                    <tr>
+                        <td>
+                            <ControlLabel>Y-Axis Value:</ControlLabel>
+                        </td>
+                        <td className="dashed-border-right">
+                            <FormControl componentClass="select" data-test="cancerSummaryYAxisSelect" onChange={this.handleYAxisChange}
+                                         ref={(el: any) => this.inputYAxisEl = el}>
+                                <option value="alt-freq">Alteration Frequency</option>
+                                <option value="abs-count">Absolute Counts</option>
+                            </FormControl>
+                        </td>
+                        <td>
                             <ControlLabel>Min. # Total Cases:</ControlLabel>
-                            <div className='slider custom-labels'>
-                                <Slider
-                                    min={0}
-                                    max={this.totalCasesMax}
-                                    value={this.tempTotalCasesValue}
-                                    labels={{0: 0, [this.totalCasesMax]: this.totalCasesMax}}
-                                    onChange={this.handleTotalSliderChange}
-                                    onChangeComplete={this.handleTotalSliderChangeComplete}
-                                />
+                        </td>
+                        <td>
+                            <div className="slider-holder">
+                                <div className='slider custom-labels'>
+                                    <Slider
+                                        min={0}
+                                        max={this.totalCasesMax}
+                                        value={this.tempTotalCasesValue}
+                                        labels={{0: 0, [this.totalCasesMax]: this.totalCasesMax}}
+                                        onChange={this.handleTotalSliderChange}
+                                        onChangeComplete={this.handleTotalSliderChangeComplete}
+                                    />
+                                </div>
                             </div>
-                        </FormGroup>
-                        <FormGroup>
-                            <ControlLabel className="invisible">Hidden</ControlLabel>
+                        </td>
+                        <td className={classnames(this.totalCaseChanged ? "highlightInput" : "" , "dashed-border-right" , "slider-input")}>
                             <FormControl type="text" value={this.tempTotalCasesInputValue}
                                          data-test="sampleTotalThresholdInput"
                                          onChange={this.handleTotalInputChange}
                                          onKeyPress={this.handleTotalInputKeyPress}/>
-                        </FormGroup>
-                    </div>
-                    <div className="slider-holder">
-                        <FormGroup>
+                        </td>
+                        <td>
+                            <Checkbox checked={!this.hideGenomicAlterations} onChange={this.handleGenomicCheckboxChange}>
+                                Show Genomic Alteration Types
+                            </Checkbox>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><ControlLabel>Sort X-Axis By:</ControlLabel></td>
+                        <td className="dashed-border-right">
+                            <FormControl componentClass="select" data-test="cancerSummaryXAxisSelect" onChange={this.handleXAxisChange}
+                                         ref={(el: any) => this.inputXAxisEl = el}>
+                                <option value="y-axis">Y-Axis Values</option>
+                                <option value="x-axis">Alphabetically</option>
+                            </FormControl>
+                        </td>
+                        <td>
                             <ControlLabel>{`Min. ${this.yAxis === 'alt-freq' ? '%' : '#'} Altered Cases:`}</ControlLabel>
-                            <div className='slider custom-labels'>
-                                <Slider
-                                    min={0}
-                                    max={this.altCasesMax}
-                                    value={this.tempAltCasesValue}
-                                    labels={{0: 0 + symbol, [this.altCasesMax]: Math.ceil(this.altCasesMax) + symbol}}
-                                    format={(val: string) => val + symbol}
-                                    onChange={this.handleAltSliderChange}
-                                    onChangeComplete={this.handleAltSliderChangeComplete}
-                                />
+                        </td>
+                        <td>
+                            <div className="slider-holder">
+                                <div className='slider custom-labels'>
+                                    <Slider
+                                        min={0}
+                                        max={this.altCasesMax}
+                                        value={this.tempAltCasesValue}
+                                        labels={{0: 0 + symbol, [this.altCasesMax]: Math.ceil(this.altCasesMax) + symbol}}
+                                        format={(val: string) => val + symbol}
+                                        onChange={this.handleAltSliderChange}
+                                        onChangeComplete={this.handleAltSliderChangeComplete}
+                                    />
+                                </div>
                             </div>
-                        </FormGroup>
-                        <FormGroup>
-                            <ControlLabel className="invisible">Hidden</ControlLabel>
+                        </td>
+                        <td className={classnames(this.altCaseChanged ? "highlightInput" : "" , "dashed-border-right" , "slider-input")}>
                             <FormControl type="text" value={this.tempAltCasesInputValue + symbol}
                                          onChange={this.handleAltInputChange}
                                          data-test="alterationThresholdInput"
                                          onKeyPress={this.handleAltInputKeyPress}/>
-                        </FormGroup>
-                    </div>
-                </div>
-
-                <div>
-                    <Checkbox checked={!this.hideGenomicAlterations} onChange={this.handleGenomicCheckboxChange}>
-                        Show Genomic Alteration Types
-                    </Checkbox>
-                </div>
+                        </td>
+                    </tr>
+                </table>
             </div>)
     }
 
     public render() {
         return (
+            <WindowWidthBox offset={60}>
             <If condition={this.hasAlterations}>
                 <Then>
-                    <div>
+                    <div data-test="cancerTypesSummaryDiv">
 
                         <div className={'cancer-summary--main-options'}>
 
@@ -460,7 +552,8 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
                                         return <Radio
                                             checked={option.value === this.props.groupAlterationsBy}
                                             onChange={(e) => {
-                                                this.props.handlePivotChange($(e.target).attr("data-value"))
+                                                this.initializeSliderValue();
+                                                this.props.handlePivotChange($(e.target).attr("data-value"));
                                             }}
                                             inline
                                             data-value={option.value}
@@ -470,25 +563,25 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
                             </ButtonGroup>
                         </div>
 
-                        <div role="group" className="btn-group cancer-summary--chart-buttons">
-                            <button onClick={this.toggleShowControls} className="btn btn-default btn-xs">Customize <i
-                                className="fa fa-cog" aria-hidden="true"></i></button>
-                            <button className={`btn btn-default btn-xs`} onClick={this.downloadPng}>
-                                PNG <i className="fa fa-cloud-download" aria-hidden="true"></i>
-                            </button>
-                            <button className={`btn btn-default btn-xs`}
-                               onClick={this.downloadSvg}>
-                                SVG <i className="fa fa-cloud-download" aria-hidden="true"></i>
-                            </button>
+                        {/*<div role="group" className="hidden btn-group cancer-summary--chart-buttons">*/}
+                            {/*<button onClick={this.toggleShowControls} className="btn btn-default btn-xs">Customize <i*/}
+                                {/*className="fa fa-cog" aria-hidden="true"></i></button>*/}
+                        {/*</div>*/}
+
+                        <div className={classnames("inlineBlock",{hidden: !this.showControls}, 'cancer-summary-secondary-options')}>
+                            {/*<button type="button" onClick={this.toggleShowControls} className="close">×</button>*/}
+                            {this.controls}
                         </div>
 
-                        <Panel className={classnames({hidden: !this.showControls}, 'cancer-summary-secondary-options')}>
-                            <button type="button" onClick={this.toggleShowControls} className="close">×</button>
-                            {this.controls}
-                        </Panel>
+                        <div className={classnames("alert" , "alert-success", {hidden: !this.totalCaseChanged && !this.altCaseChanged})}>
+                            <span style={{verticalAlign:"middle"}}>
+                                {`${this.chartData.labels.length} of ${this.groupKeysSorted.length} categories (${_.keyBy(GroupByOptions, "value")[this.props.groupAlterationsBy].label}) are shown based on filtering.`}
+                            </span>
+                        </div>
 
                         <CancerSummaryChart key={Date.now()}
                                         data={this.chartData.data}
+                                        alterationTypeDataCounts={this.chartData.alterationTypeDataCounts}
                                         ref={(el:any)=>this.chartComponent = el}
                                         countsByGroup={this.countsData}
                                         representedAlterations={this.chartData.representedAlterations}
@@ -497,13 +590,14 @@ export class CancerSummaryContent extends React.Component<ICancerSummaryContentP
                                         colors={alterationToColor}
                                         hideGenomicAlterations={this.hideGenomicAlterations}
                                         xLabels={this.chartData.labels}/>
+
                     </div>
                 </Then>
                 <Else>
                     <div className="alert alert-info">There are no alterations in this gene.</div>
                 </Else>
             </If>
-
+            </WindowWidthBox>
         );
     }
 }

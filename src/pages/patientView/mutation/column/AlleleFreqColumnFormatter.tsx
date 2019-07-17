@@ -1,7 +1,7 @@
 import * as React from 'react';
 import * as _ from 'lodash';
 import {If, Else, Then } from 'react-if';
-import DefaultTooltip from "shared/components/defaultTooltip/DefaultTooltip";
+import DefaultTooltip from "public-lib/components/defaultTooltip/DefaultTooltip";
 import 'rc-tooltip/assets/bootstrap_white.css';
 import {Mutation} from "shared/api/generated/CBioPortalAPI";
 import SampleManager from "../../sampleManager";
@@ -98,10 +98,9 @@ export default class AlleleFreqColumnFormatter {
         }
 
         // as long as we have tooltip lines, show tooltip in either cases (single or multiple)
-        if (tooltipLines.length > 0)
+        if (tooltipLines.length > 0 && freqs.filter((freq) => freq !== undefined).length > 0)
         {
             const overlay = () => <span>{tooltipLines}</span>;
-
             content = (
                 <DefaultTooltip
                     placement="left"
@@ -132,7 +131,7 @@ export default class AlleleFreqColumnFormatter {
             return map;
         }, {} as {[s:string]:Mutation});
         return sampleManager.getSampleIdsInOrder().map(sampleId=>sampleToMutation[sampleId]).map(mutation=>
-            AlleleFreqColumnFormatter.calcFrequency(mutation)
+            AlleleFreqColumnFormatter.calcFrequency(mutation) || null
         );
     }
 

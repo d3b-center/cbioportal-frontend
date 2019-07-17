@@ -14,6 +14,7 @@ import MutSigGeneSelector from "./MutSigGeneSelector";
 import GisticGeneSelector from "./GisticGeneSelector";
 import SectionHeader from "../sectionHeader/SectionHeader";
 import AppConfig from "appConfig";
+import {ServerConfigHelpers} from "../../../config/config";
 
 const styles = styles_any as {
 	GeneSetSelector: string,
@@ -24,14 +25,11 @@ const styles = styles_any as {
 	empty: string,
 	notEmpty: string,
 	sectionSpinner: string,
+	learnOql: string;
 };
 
-export interface GeneSetSelectorProps
-{
-}
-
 @observer
-export default class GeneSetSelector extends QueryStoreComponent<GeneSetSelectorProps, {}>
+export default class GeneSetSelector extends QueryStoreComponent<{}, {}>
 {
 	@computed get selectedGeneListOption()
 	{
@@ -42,8 +40,12 @@ export default class GeneSetSelector extends QueryStoreComponent<GeneSetSelector
 	@computed get geneListOptions()
 	{
 	    let geneList: {"id": string, "genes": string[]}[] = gene_lists;
-	    if (AppConfig.querySetsOfGenes) {
-	        geneList = AppConfig.querySetsOfGenes;
+
+	    if (AppConfig.serverConfig.query_sets_of_genes) {
+	    	const parsed = ServerConfigHelpers.parseQuerySetsOfGenes(AppConfig.serverConfig.query_sets_of_genes);
+	    	if (parsed) {
+	    		geneList = parsed;
+			}
 	    }
 
 	    return [
@@ -77,7 +79,9 @@ export default class GeneSetSelector extends QueryStoreComponent<GeneSetSelector
 		return (
 			<FlexRow padded overflow className={styles.GeneSetSelector}>
 				<SectionHeader className="sectionLabel"
-							   secondaryComponent={<a target="_blank" href={getOncoQueryDocUrl()}>Advanced: Onco Query Language (OQL)</a>}
+							   secondaryComponent={
+								   <a target="_blank" className={styles.learnOql} href={getOncoQueryDocUrl()}><strong>Hint:</strong> Learn Onco Query Language (OQL)<br />to write more powerful queries <i className={"fa fa-external-link"} /></a>
+							   }
 							   promises={[this.store.mutSigForSingleStudy, this.store.gisticForSingleStudy, this.store.genes]}
 				>
 					Enter Genes:
@@ -87,10 +91,11 @@ export default class GeneSetSelector extends QueryStoreComponent<GeneSetSelector
 				<ReactSelect
 					value={this.selectedGeneListOption}
 					options={this.geneListOptions}
-					onChange={option => this.store.geneQuery = option ? option.value : ''}
+					onChange={(option:any) => this.store.geneQuery = option ? option.value : ''}
 				/>
 
-				{!!(this.store.mutSigForSingleStudy.result.length || this.store.gisticForSingleStudy.result.length) && (
+				{/* we are hiding these buttons on 02/27/2019 */}
+				{/* {!!(this.store.mutSigForSingleStudy.result.length || this.store.gisticForSingleStudy.result.length) && (
 					<FlexRow padded className={styles.buttonRow}>
 						{!!(this.store.mutSigForSingleStudy.result.length) && (
 							<button className="btn btn-default btn-sm" onClick={() => this.store.showMutSigPopup = true}>
@@ -103,15 +108,15 @@ export default class GeneSetSelector extends QueryStoreComponent<GeneSetSelector
 							</button>
 						)}
 					</FlexRow>
-				)}
+				)} */}
 
 				<textarea
 					ref={this.textAreaRef}
 					className={classNames(styles.geneSet, this.store.geneQuery ? styles.notEmpty : styles.empty)}
 					rows={5}
 					cols={80}
-					placeholder="Enter HUGO Gene Symbols or Gene Aliases"
-					title="Enter HUGO Gene Symbols or Gene Aliases"
+					placeholder="Enter HUGO Gene Symbols, Gene Aliases, or OQL"
+					title="Enter HUGO Gene Symbols, Gene Aliases, or OQL"
 					value={this.store.geneQuery}
 					onChange={event => this.store.geneQuery = event.currentTarget.value}
 					data-test='geneSet'

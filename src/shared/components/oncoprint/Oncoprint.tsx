@@ -1,11 +1,14 @@
 import * as React from "react";
-import OncoprintJS, {TrackId} from "oncoprintjs";
+import OncoprintJS, {TrackId, CustomTrackOption} from "oncoprintjs";
 import {GenePanelData, MolecularProfile} from "../../api/generated/CBioPortalAPI";
 import {observer} from "mobx-react";
 import {computed} from "mobx";
 import {transition} from "./DeltaUtils";
 import _ from "lodash";
-import {AnnotatedMutation, ExtendedAlteration} from "../../../pages/resultsView/ResultsViewPageStore";
+import {
+    AnnotatedMutation, AnnotatedNumericGeneMolecularData,
+    ExtendedAlteration
+} from "../../../pages/resultsView/ResultsViewPageStore";
 import "./styles.scss";
 
 export type ClinicalTrackDatum = {
@@ -24,7 +27,10 @@ export type ClinicalTrackSpec = {
     label: string;
     description: string;
     data: ClinicalTrackDatum[];
+    altered_uids?:string[];
     na_legend_label?:string;
+    na_tooltip_value?:string; // If given, then show a tooltip over NA columns that has this value
+    custom_options?:CustomTrackOption[];
 } & ({
     datatype: "counts";
     countsCategoryLabels:string[];
@@ -35,13 +41,14 @@ export type ClinicalTrackSpec = {
     numberLogScale:boolean;
 } | {
     datatype: "string";
+    category_to_color?:{[category:string]:string}
 });
 
 export interface IBaseHeatmapTrackDatum {
     profile_data: number|null;
     sample?: string;
-    patient?: string;
-    study: string;
+    patient: string;
+    study_id: string;
     uid: string;
     na?:boolean;
 }
@@ -52,15 +59,23 @@ export interface IGenesetHeatmapTrackDatum extends IBaseHeatmapTrackDatum {
     geneset_id: string;
 }
 
+export type GeneticTrackDatum_Data =
+    Pick<ExtendedAlteration&AnnotatedMutation&AnnotatedNumericGeneMolecularData,
+        "hugoGeneSymbol" | "molecularProfileAlterationType" | "proteinChange" | "driverFilter" |
+        "driverFilterAnnotation" | "driverTiersFilter" | "driverTiersFilterAnnotation" | "oncoKbOncogenic" |
+        "alterationSubType" | "value" | "mutationType" | "isHotspot" | "entrezGeneId" | "putativeDriver" | "mutationStatus">;
+
+export type GeneticTrackDatum_ProfiledIn = {genePanelId?:string, molecularProfileId:string};
+
 export type GeneticTrackDatum = {
     trackLabel: string;
     sample?:string;
-    patient?:string;
+    patient:string;
     study_id:string;
     uid:string;
-    data:(ExtendedAlteration&AnnotatedMutation)[];
-    profiled_in?: GenePanelData[];
-    not_profiled_in?:GenePanelData[];
+    data:GeneticTrackDatum_Data[];
+    profiled_in?: GeneticTrackDatum_ProfiledIn[];
+    not_profiled_in?:GeneticTrackDatum_ProfiledIn[];
     na?: boolean;
     disp_mut?:string;
     disp_cna?:string;
@@ -73,8 +88,10 @@ export type GeneticTrackDatum = {
 export type GeneticTrackSpec = {
     key: string; // for efficient diffing, just like in React. must be unique
     label: string;
-    oql: string; // OQL corresponding to the track
+    sublabel?: string;
+    oql?: string; // OQL corresponding to the track
     info: string;
+    infoTooltip?:string;
     data: GeneticTrackDatum[];
     expansionCallback?: () => void;
     removeCallback?: () => void;
@@ -112,10 +129,12 @@ export interface IOncoprintProps {
 
     clinicalTracks: ClinicalTrackSpec[];
     geneticTracks: GeneticTrackSpec[];
+    geneticTracksOrder?:string[]; // track keys
     genesetHeatmapTracks: IGenesetHeatmapTrackSpec[];
     heatmapTracks: IGeneHeatmapTrackSpec[];
     divId:string;
     width:number;
+    caseLinkOutInTooltips:boolean;
 
     molecularProfileIdToMolecularProfile?:{[molecularProfileId:string]:MolecularProfile};
 
@@ -123,8 +142,13 @@ export interface IOncoprintProps {
 
     hiddenIds?:string[];
 
+    alterationTypesInQuery?:string[];
+
     distinguishMutationType?:boolean;
     distinguishDrivers?:boolean;
+    distinguishGermlineMutations?:boolean;
+
+    showSublabels?:boolean;
 
     sortConfig?:{
         order?:string[]; // overrides below options if present
@@ -150,12 +174,12 @@ export interface IOncoprintProps {
 @observer
 export default class Oncoprint extends React.Component<IOncoprintProps, {}> {
     private div:HTMLDivElement;
-    public oncoprint:OncoprintJS<any>;
+    public oncoprint:OncoprintJS<any>|undefined;
     private trackSpecKeyToTrackId:{[key:string]:TrackId};
     private lastTransitionProps:IOncoprintProps;
 
-    constructor() {
-        super();
+    constructor(props:IOncoprintProps) {
+        super(props);
 
         this.trackSpecKeyToTrackId = {};
         this.divRefHandler = this.divRefHandler.bind(this);
@@ -205,6 +229,13 @@ export default class Oncoprint extends React.Component<IOncoprintProps, {}> {
 
     componentDidMount() {
         this.refreshOncoprint(this.props);
+    }
+
+    componentWillUnmount() {
+        if (this.oncoprint) {
+            this.oncoprint.destroy();
+            this.oncoprint = undefined;
+        }
     }
 
     render() {

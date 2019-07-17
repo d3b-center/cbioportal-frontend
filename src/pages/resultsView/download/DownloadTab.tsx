@@ -1,9 +1,10 @@
 import * as React from 'react';
 import * as _ from 'lodash';
-import {computed} from "mobx";
+import {computed, observable} from "mobx";
 import {observer} from 'mobx-react';
 import fileDownload from 'react-file-download';
 import {AnnotatedExtendedAlteration, ExtendedAlteration, ResultsViewPageStore} from "../ResultsViewPageStore";
+import {CoverageInformation} from "../ResultsViewPageStoreUtils";
 import {OQLLineFilterOutput} from "shared/lib/oql/oqlfilter";
 import FeatureTitle from "shared/components/featureTitle/FeatureTitle";
 import {SimpleCopyDownloadControls} from "shared/components/copyDownloadControls/SimpleCopyDownloadControls";
@@ -17,6 +18,15 @@ import {
 
 import styles from "./styles.module.scss";
 import classNames from 'classnames';
+import OqlStatusBanner from "../../../shared/components/oqlStatusBanner/OqlStatusBanner";
+import WindowStore from "../../../shared/components/window/WindowStore";
+import {WindowWidthBox} from "../../../shared/components/WindowWidthBox/WindowWidthBox";
+import {remoteData} from "../../../public-lib/api/remoteData";
+import LoadingIndicator from "shared/components/loadingIndicator/LoadingIndicator";
+import onMobxPromise from "shared/lib/onMobxPromise";
+import {MolecularProfile} from "shared/api/generated/CBioPortalAPI";
+import {getMobxPromiseGroupStatus} from "../../../shared/lib/getMobxPromiseGroupStatus";
+import ErrorMessage from "../../../shared/components/ErrorMessage";
 
 export interface IDownloadTabProps {
     store: ResultsViewPageStore;
@@ -39,232 +49,263 @@ export default class DownloadTab extends React.Component<IDownloadTabProps, {}>
         this.handleTransposedProteinDownload = this.handleTransposedProteinDownload.bind(this);
     }
 
-    @computed get caseAggregatedDataByOQLLine() {
-        return this.props.store.putativeDriverFilteredCaseAggregatedDataByOQLLine.result;
-    }
+    readonly geneAlterationData = remoteData<IGeneAlteration[]>({
+        await: ()=>[
+            this.props.store.oqlFilteredCaseAggregatedDataByOQLLine,
+            this.props.store.sequencedSampleKeysByGene
+        ],
+        invoke:()=>Promise.resolve(generateGeneAlterationData(
+            this.props.store.oqlFilteredCaseAggregatedDataByOQLLine.result!,
+            this.props.store.sequencedSampleKeysByGene.result!
+        ))
+    });
 
-    @computed get unfilteredCaseAggregatedData() {
-        return this.props.store.unfilteredCaseAggregatedData.result;
-    }
+    readonly geneAlterationDataByGene = remoteData<{[gene: string]: IGeneAlteration}>({
+        await:()=>[this.geneAlterationData],
+        invoke:()=>Promise.resolve(_.keyBy(this.geneAlterationData.result!, "gene"))
+    });
 
-    @computed get sequencedSampleKeysByGene() {
-        return this.props.store.sequencedSampleKeysByGene.result;
-    }
+    readonly caseAlterationData = remoteData<ICaseAlteration[]>({
+        await:()=>[
+            this.props.store.selectedMolecularProfiles,
+            this.props.store.oqlFilteredCaseAggregatedDataByOQLLine,
+            this.props.store.coverageInformation,
+            this.props.store.samples,
+            this.geneAlterationDataByGene,
+            this.props.store.molecularProfileIdToMolecularProfile
+        ],
+        invoke: ()=>Promise.resolve(generateCaseAlterationData(
+            this.props.store.selectedMolecularProfiles.result!,
+            this.props.store.oqlFilteredCaseAggregatedDataByOQLLine.result!,
+            this.props.store.coverageInformation.result!,
+            this.props.store.samples.result!,
+            this.geneAlterationDataByGene.result!,
+            this.props.store.molecularProfileIdToMolecularProfile.result!
+        ))
+    });
 
-    @computed get samples() {
-        return this.props.store.samples.result;
-    }
+    readonly mutationData = remoteData<{[key: string]: ExtendedAlteration[]}>({
+        await:()=>[this.props.store.nonOqlFilteredCaseAggregatedData],
+        invoke:()=>Promise.resolve(generateMutationData(this.props.store.nonOqlFilteredCaseAggregatedData.result!))
+    });
 
-    @computed get genes() {
-        return this.props.store.genes.result;
-    }
+    readonly mutationDownloadData = remoteData<string[][]>({
+        await:()=>[this.mutationData, this.props.store.samples, this.props.store.genes],
+        invoke:()=>Promise.resolve(generateMutationDownloadData(
+            this.mutationData.result!, this.props.store.samples.result!, this.props.store.genes.result!
+        ))
+    });
 
-    @computed get genePanelInformation() {
-        return this.props.store.coverageInformation.result;
-    }
+    readonly transposedMutationDownloadData = remoteData<string[][]>({
+        await:()=>[this.mutationDownloadData],
+        invoke:()=>Promise.resolve(_.unzip(this.mutationDownloadData.result!))
+    });
 
-    @computed get geneAlterationData(): IGeneAlteration[] {
-        return generateGeneAlterationData(this.caseAggregatedDataByOQLLine, this.sequencedSampleKeysByGene);
-    }
+    readonly mutationDataText = remoteData<string>({
+        await:()=>[this.mutationDownloadData],
+        invoke:()=>Promise.resolve(stringify2DArray(this.mutationDownloadData.result!))
+    });
 
-    @computed get geneAlterationDataByGene(): {[gene: string]: IGeneAlteration} {
-        return _.keyBy(this.geneAlterationData, "gene");
-    }
+    readonly transposedMutationDataText = remoteData<string>({
+        await:()=>[this.transposedMutationDownloadData],
+        invoke:()=>Promise.resolve(stringify2DArray(this.transposedMutationDownloadData.result!))
+    });
 
-    @computed get caseAlterationData(): ICaseAlteration[] {
-        if (this.props.store.selectedMolecularProfiles.isComplete) {
-            return generateCaseAlterationData(
-                this.props.store.selectedMolecularProfiles.result,
-                this.caseAggregatedDataByOQLLine,
-                this.genePanelInformation,
-                this.samples,
-                this.geneAlterationDataByGene);
-        } else {
-            return [];
+    readonly mrnaData = remoteData<{[key: string]: ExtendedAlteration[]}>({
+        await:()=>[this.props.store.nonOqlFilteredCaseAggregatedData],
+        invoke:()=>Promise.resolve(generateMrnaData(this.props.store.nonOqlFilteredCaseAggregatedData.result!))
+    });
+
+    readonly mrnaDownloadData = remoteData<string[][]>({
+        await:()=>[this.mrnaData, this.props.store.samples, this.props.store.genes],
+        invoke:()=>Promise.resolve(generateDownloadData(
+            this.mrnaData.result!, this.props.store.samples.result!, this.props.store.genes.result!
+        ))
+    });
+
+    readonly transposedMrnaDownloadData = remoteData<string[][]>({
+        await:()=>[this.mrnaDownloadData],
+        invoke:()=>Promise.resolve(_.unzip(this.mrnaDownloadData.result!))
+    });
+
+    readonly mrnaDataText = remoteData<string>({
+        await:()=>[this.mrnaDownloadData],
+        invoke:()=>Promise.resolve(stringify2DArray(this.mrnaDownloadData.result!))
+    });
+
+    readonly transposedMrnaDataText = remoteData<string>({
+        await:()=>[this.transposedMrnaDownloadData],
+        invoke:()=>Promise.resolve(stringify2DArray(this.transposedMrnaDownloadData.result!))
+    });
+
+    readonly proteinData = remoteData<{[key: string]: ExtendedAlteration[]}>({
+        await:()=>[this.props.store.nonOqlFilteredCaseAggregatedData],
+        invoke:()=>Promise.resolve(generateProteinData(this.props.store.nonOqlFilteredCaseAggregatedData.result!))
+    });
+
+    readonly proteinDownloadData = remoteData<string[][]>({
+        await:()=>[this.proteinData, this.props.store.samples, this.props.store.genes],
+        invoke:()=>Promise.resolve(generateDownloadData(
+            this.proteinData.result!, this.props.store.samples.result!, this.props.store.genes.result!
+        ))
+    });
+
+    readonly transposedProteinDownloadData = remoteData<string[][]>({
+        await:()=>[this.proteinDownloadData],
+        invoke:()=>Promise.resolve(_.unzip(this.proteinDownloadData.result!))
+    });
+
+    readonly proteinDataText = remoteData<string>({
+        await:()=>[this.proteinDownloadData],
+        invoke:()=>Promise.resolve(stringify2DArray(this.proteinDownloadData.result!))
+    });
+
+    readonly transposedProteinDataText = remoteData<string>({
+        await:()=>[this.transposedProteinDownloadData],
+        invoke:()=>Promise.resolve(stringify2DArray(this.transposedProteinDownloadData.result!))
+    });
+
+    readonly cnaData = remoteData<{[key: string]: ExtendedAlteration[]}>({
+        await:()=>[this.props.store.nonOqlFilteredCaseAggregatedData],
+        invoke:()=>Promise.resolve(generateCnaData(this.props.store.nonOqlFilteredCaseAggregatedData.result!))
+    });
+
+    readonly cnaDownloadData = remoteData<string[][]>({
+        await:()=>[this.cnaData, this.props.store.samples, this.props.store.genes],
+        invoke:()=>Promise.resolve(generateDownloadData(
+            this.cnaData.result!, this.props.store.samples.result!, this.props.store.genes.result!
+        ))
+    });
+
+    readonly transposedCnaDownloadData = remoteData<string[][]>({
+        await:()=>[this.cnaDownloadData],
+        invoke:()=>Promise.resolve(_.unzip(this.cnaDownloadData.result!))
+    });
+
+    readonly cnaDataText = remoteData<string>({
+        await:()=>[this.cnaDownloadData],
+        invoke:()=>Promise.resolve(stringify2DArray(this.cnaDownloadData.result!))
+    });
+
+    readonly transposedCnaDataText = remoteData<string>({
+        await:()=>[this.transposedCnaDownloadData],
+        invoke:()=>Promise.resolve(stringify2DArray(this.transposedCnaDownloadData.result!))
+    });
+
+    readonly alteredSamples = remoteData<string[]>({
+        await:()=>[this.caseAlterationData],
+        invoke:()=>Promise.resolve(this.caseAlterationData.result!
+            .filter(caseAlteration => caseAlteration.altered)
+            .map(caseAlteration => `${caseAlteration.studyId}:${caseAlteration.sampleId}`))
+    });
+
+    readonly alteredSamplesText = remoteData<string>({
+        await: ()=>[this.alteredSamples],
+        invoke:()=>Promise.resolve(this.alteredSamples.result!.join("\n"))
+    });
+
+    readonly sampleMatrix = remoteData<string[][]>({
+        await:()=>[this.caseAlterationData],
+        invoke:()=>{
+            let result : string[][] = [];
+            _.map(this.caseAlterationData.result!, (caseAlteration) => {
+                // if writing the first line, add titles
+                if (_.isEmpty(result)) {
+                    const titleMap = _.keys(caseAlteration.oqlDataByGene);
+                    result.push(['studyID:sampleId', 'Altered', ...titleMap]);
+                }
+                // get altered infomation by gene
+                const genesAlteredData = _.map(caseAlteration.oqlDataByGene, (oqlData) => {
+                    return _.isEmpty(oqlData.alterationTypes) ? "0" : "1";
+                });
+                result.push([`${caseAlteration.studyId}:${caseAlteration.sampleId}`, caseAlteration.altered ? "1" : "0", ...genesAlteredData]);
+            })
+            return Promise.resolve(result);
+        }
+    });
+
+    readonly sampleMatrixText = remoteData<string>({
+        await:()=>[this.sampleMatrix],
+        invoke:()=>Promise.resolve(stringify2DArray(this.sampleMatrix.result!))
+    });
+
+    readonly oqls = remoteData<OQLLineFilterOutput<AnnotatedExtendedAlteration>[]>({
+        await:()=>[this.props.store.oqlFilteredCaseAggregatedDataByOQLLine],
+        invoke:()=>Promise.resolve(this.props.store.oqlFilteredCaseAggregatedDataByOQLLine.result!
+                        .map(data => data.oql))
+    });
+
+    public render() {
+        const status = getMobxPromiseGroupStatus(this.downloadableFilesTable, this.geneAlterationData, this.caseAlterationData, this.oqls);
+
+        switch (status) {
+            case "pending":
+                return <LoadingIndicator isLoading={true} center={true} size={"big"}/>;
+            case "error":
+                return <ErrorMessage/>;
+            case "complete":
+            default:
+                return (
+                    <WindowWidthBox data-test="downloadTabDiv" offset={60}>
+                        <div className={"tabMessageContainer"}>
+                            <OqlStatusBanner className="download-oql-status-banner" store={this.props.store} tabReflectsOql={true} />
+                        </div>
+                        <div>
+                            <FeatureTitle
+                                title="Downloadable Data Files"
+                                className="forceHeaderStyle h4"
+                                isLoading={false}
+                                style={{marginBottom:15}}
+                            />
+                            {this.downloadableFilesTable.isComplete && this.downloadableFilesTable.result}
+                        </div>
+                        <hr/>
+                        <div className={styles["tables-container"]} data-test="dataDownloadGeneAlterationTable">
+                            <FeatureTitle
+                                title="Gene Alteration Frequency"
+                                isLoading={false}
+                                className="pull-left forceHeaderStyle h4"
+                            />
+                            {this.geneAlterationData.isComplete && (<GeneAlterationTable geneAlterationData={this.geneAlterationData.result} />)}
+                        </div>
+                        <hr/>
+                        <div className={styles["tables-container"]}>
+                            <FeatureTitle
+                                title="Type of Genetic Alterations Across All Samples"
+                                isLoading={false}
+                                className="pull-left forceHeaderStyle h4"
+                            />
+                            {this.oqls.isComplete && this.caseAlterationData.isComplete && this.props.store.alterationsBySelectedMolecularProfiles.isComplete && (
+                                <CaseAlterationTable
+                                    caseAlterationData={this.caseAlterationData.result}
+                                    oqls={this.oqls.result}
+                                    alterationTypes={this.props.store.alterationsBySelectedMolecularProfiles.result}
+                                />
+                            )}
+                        </div>
+                    </WindowWidthBox>
+                );
         }
     }
 
-    @computed get mutationData(): {[key: string]: ExtendedAlteration[]} {
-        return generateMutationData(this.unfilteredCaseAggregatedData);
-    }
-
-    @computed get mutationDownloadData(): string[][] {
-        return generateMutationDownloadData(this.mutationData, this.samples, this.genes);
-    }
-
-    @computed get transposedMutationDownloadData(): string[][] {
-        return _.unzip(this.mutationDownloadData);
-    }
-
-    @computed get mutationDataText(): string {
-        return stringify2DArray(this.mutationDownloadData);
-    }
-
-    @computed get transposedMutationDataText(): string {
-        return stringify2DArray(this.transposedMutationDownloadData);
-    }
-
-    @computed get mrnaData(): {[key: string]: ExtendedAlteration[]} {
-        return generateMrnaData(this.unfilteredCaseAggregatedData);
-    }
-
-    @computed get mrnaDownloadData(): string[][] {
-        return generateDownloadData(this.mrnaData, this.samples, this.genes);
-    }
-
-    @computed get transposedMrnaDownloadData(): string[][] {
-        return _.unzip(this.mrnaDownloadData);
-    }
-
-    @computed get mrnaDataText(): string {
-        return stringify2DArray(this.mrnaDownloadData);
-    }
-
-    @computed get transposedMrnaDataText(): string {
-        return stringify2DArray(this.transposedMrnaDownloadData);
-    }
-
-    @computed get proteinData(): {[key: string]: ExtendedAlteration[]} {
-        return generateProteinData(this.unfilteredCaseAggregatedData);
-    }
-
-    @computed get proteinDownloadData(): string[][] {
-        return generateDownloadData(this.proteinData, this.samples, this.genes);
-    }
-
-    @computed get transposedProteinDownloadData(): string[][] {
-        return _.unzip(this.proteinDownloadData);
-    }
-
-    @computed get proteinDataText(): string {
-        return stringify2DArray(this.proteinDownloadData);
-    }
-
-    @computed get transposedProteinDataText(): string {
-        return stringify2DArray(this.transposedProteinDownloadData);
-    }
-
-    @computed get cnaData(): {[key: string]: ExtendedAlteration[]} {
-        return generateCnaData(this.unfilteredCaseAggregatedData);
-    }
-
-    @computed get cnaDownloadData(): string[][] {
-        return generateDownloadData(this.cnaData, this.samples, this.genes);
-    }
-
-    @computed get transposedCnaDownloadData(): string[][] {
-        return _.unzip(this.cnaDownloadData);
-    }
-
-    @computed get cnaDataText(): string {
-        return stringify2DArray(this.cnaDownloadData);
-    }
-
-    @computed get transposedCnaDataText(): string {
-        return stringify2DArray(this.transposedCnaDownloadData);
-    }
-
-    @computed get alteredSamples(): string[] {
-        return this.caseAlterationData
-            .filter(caseAlteration => caseAlteration.altered)
-            .map(caseAlteration => `${caseAlteration.studyId}:${caseAlteration.sampleId}`);
-    }
-
-    @computed get alteredSamplesText(): string {
-        return this.alteredSamples.join("\n");
-    }
-
-    @computed get sampleMatrix(): string[][] {
-        return this.caseAlterationData
-            .map(caseAlteration =>
-                [`${caseAlteration.studyId}:${caseAlteration.sampleId}`, caseAlteration.altered ? "1" : "0"]);
-    }
-
-    @computed get sampleMatrixText(): string {
-        return stringify2DArray(this.sampleMatrix);
-    }
-
-    @computed get oqls(): OQLLineFilterOutput<AnnotatedExtendedAlteration>[] {
-        return this.caseAggregatedDataByOQLLine ?
-            this.caseAggregatedDataByOQLLine.map(data => data.oql) : [];
-    }
-
-    public render() {
-        const loadingGeneAlterationData =
-            this.props.store.putativeDriverFilteredCaseAggregatedDataByOQLLine.status === "pending" ||
-            this.props.store.sequencedSampleKeysByGene.status === "pending";
-
-        const errorGeneAlterationData =
-            this.props.store.putativeDriverFilteredCaseAggregatedDataByOQLLine.status === "error" ||
-            this.props.store.sequencedSampleKeysByGene.status === "error";
-
-        const loadingCaseAlterationData =
-            this.props.store.putativeDriverFilteredCaseAggregatedDataByOQLLine.status === "pending" ||
-            this.props.store.samples.status === "pending" ||
-            this.props.store.coverageInformation.status === "pending";
-
-        const errorCaseAlterationData =
-            this.props.store.putativeDriverFilteredCaseAggregatedDataByOQLLine.status === "error" ||
-            this.props.store.samples.status === "error" ||
-            this.props.store.coverageInformation.status === "error";
-
-        const loadingDownloadData = loadingGeneAlterationData ||
-            this.props.store.unfilteredCaseAggregatedData.status === "pending";
-
-        const errorDownloadData = errorCaseAlterationData ||
-            this.props.store.unfilteredCaseAggregatedData.status === "error";
-
-        return (
-            <div className="cbioportal-frontend">
-                <div>
-                    <FeatureTitle
-                        title="Downloadable Data Files"
-                        className="forceHeaderStyle h4"
-                        isLoading={loadingDownloadData}
-                        style={{marginBottom:15}}
-                    />
-                    {!loadingDownloadData && !errorDownloadData && this.downloadableFilesTable()}
-                </div>
-                <hr/>
-                <div className={styles["tables-container"]} data-test="dataDownloadGeneAlterationTable">
-                    <FeatureTitle
-                        title="Gene Alteration Frequency"
-                        isLoading={loadingGeneAlterationData}
-                        className="pull-left forceHeaderStyle h4"
-                    />
-                    <GeneAlterationTable geneAlterationData={this.geneAlterationData} />
-                </div>
-                <hr/>
-                <div className={styles["tables-container"]}>
-                    <FeatureTitle
-                        title="Type of Genetic Alterations Across All Samples"
-                        isLoading={loadingCaseAlterationData}
-                        className="pull-left forceHeaderStyle h4"
-                    />
-                    <CaseAlterationTable
-                        caseAlterationData={this.caseAlterationData}
-                        oqls={this.oqls}
-                    />
-                </div>
-            </div>
-        );
-    }
-
-    private downloadableFilesTable(): JSX.Element
-    {
-        return (
+    readonly downloadableFilesTable = remoteData({
+        await:()=>[
+            this.cnaData, this.mutationData, this.mrnaData, this.proteinData,
+            this.alteredSamplesDownloadControls, this.sampleMatrixDownloadControls
+        ],
+        invoke:()=>Promise.resolve(
             <table className={ classNames("table", "table-striped", styles.downloadCopyTable) }>
                 <tbody>
-                    {hasValidData(this.cnaData) && this.cnaDownloadControls()}
-                    {hasValidMutationData(this.mutationData) && this.mutationDownloadControls()}
-                    {hasValidData(this.mrnaData) && this.mrnaExprDownloadControls()}
-                    {hasValidData(this.proteinData) && this.proteinExprDownloadControls()}
-                    {this.alteredSamplesDownloadControls()}
-                    {this.sampleMatrixDownloadControls()}
+                    {hasValidData(this.cnaData.result!) && this.cnaDownloadControls()}
+                    {hasValidMutationData(this.mutationData.result!) && this.mutationDownloadControls()}
+                    {hasValidData(this.mrnaData.result!) && this.mrnaExprDownloadControls()}
+                    {hasValidData(this.proteinData.result!) && this.proteinExprDownloadControls()}
+                    {this.alteredSamplesDownloadControls.result!}
+                    {this.sampleMatrixDownloadControls.result!}
                 </tbody>
             </table>
-        );
-    }
+        )
+    });
 
     private cnaDownloadControls(): JSX.Element
     {
@@ -332,61 +373,65 @@ export default class DownloadTab extends React.Component<IDownloadTabProps, {}>
         );
     }
 
-    private alteredSamplesDownloadControls(): JSX.Element
-    {
-        const handleDownload = () => this.alteredSamplesText;
+    readonly alteredSamplesDownloadControls = remoteData({
+        await:()=>[this.alteredSamplesText],
+        invoke:()=>{
+            const handleDownload = () => this.alteredSamplesText.result!;
 
-        return this.copyDownloadControlsRow("Samples affected: Only samples with an alteration are included",
-                                            handleDownload,
-                                            "affected_samples.txt");
-    }
+            return Promise.resolve(this.copyDownloadControlsRow("Samples affected: Only samples with an alteration are included",
+                                                handleDownload,
+                                                "affected_samples.txt"));
+        }
+    });
 
-    private sampleMatrixDownloadControls(): JSX.Element
-    {
-        const handleDownload = () => this.sampleMatrixText;
+    readonly sampleMatrixDownloadControls = remoteData({
+        await:()=>[this.sampleMatrixText],
+        invoke:()=>{
+            const handleDownload = () => this.sampleMatrixText.result!;
 
-        return this.copyDownloadControlsRow("Sample matrix: 1 = Sample harbors alteration in one of the input genes",
-                                            handleDownload,
-                                            "sample_matrix.txt");
-    }
+            return Promise.resolve(this.copyDownloadControlsRow("Sample matrix: 1 = Sample harbors alteration in one of the input genes",
+                                                handleDownload,
+                                                "sample_matrix.txt"));
+        }
+    });
 
     private handleMutationDownload()
     {
-        fileDownload(this.mutationDataText, "mutations.txt");
+        onMobxPromise(this.mutationDataText, text=>fileDownload(text, "mutations.txt"));
     }
 
     private handleTransposedMutationDownload()
     {
-        fileDownload(this.transposedMutationDataText, "mutations_transposed.txt");
+        onMobxPromise(this.transposedMutationDataText, text=>fileDownload(text, "mutations_transposed.txt"));
     }
 
     private handleMrnaDownload()
     {
-        fileDownload(this.mrnaDataText, "mRNA_exp.txt");
+        onMobxPromise(this.mrnaDataText, text=>fileDownload(text, "mRNA_exp.txt"));
     }
 
     private handleTransposedMrnaDownload()
     {
-        fileDownload(this.transposedMrnaDataText, "mRNA_exp_transposed.txt");
+        onMobxPromise(this.transposedMrnaDataText, text=>fileDownload(text, "mRNA_exp_transposed.txt"));
     }
 
     private handleProteinDownload()
     {
-        fileDownload(this.proteinDataText, "protein_exp.txt");
+        onMobxPromise(this.proteinDataText, text=>fileDownload(text, "protein_exp.txt"));
     }
 
     private handleTransposedProteinDownload()
     {
-        fileDownload(this.transposedProteinDataText, "protein_exp_transposed.txt");
+        onMobxPromise(this.transposedProteinDataText, text=>fileDownload(text, "protein_exp_transposed.txt"));
     }
 
     private handleCnaDownload()
     {
-        fileDownload(this.cnaDataText, "cna.txt");
+        onMobxPromise(this.cnaDataText, text=>fileDownload(text, "cna.txt"));
     }
 
     private handleTransposedCnaDownload()
     {
-        fileDownload(this.transposedCnaDataText, "cna_transposed.txt");
+        onMobxPromise(this.transposedCnaDataText, text=>fileDownload(text, "cna_transposed.txt"));
     }
 }

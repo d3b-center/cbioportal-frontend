@@ -1,6 +1,6 @@
 import * as React  from 'react';
 import * as ReactDOM from 'react-dom';
-import DefaultTooltip from 'shared/components/defaultTooltip/DefaultTooltip';
+import DefaultTooltip from 'public-lib/components/defaultTooltip/DefaultTooltip';
 import {Button, ButtonGroup, ButtonToolbar, Form, FormGroup, MenuItem} from 'react-bootstrap';
 var ClipboardButton = require('react-clipboard.js');
 var Clipboard = require('clipboard');
@@ -66,9 +66,9 @@ export default class TableHeaderControls extends React.Component<ITableHeaderCon
 
     private _copyButton: HTMLElement;
 
-    constructor(){
+    constructor(props:ITableHeaderControlsProps){
 
-        super();
+        super(props);
 
 
         this.handleInput = this.handleInput.bind(this);
@@ -147,7 +147,7 @@ export default class TableHeaderControls extends React.Component<ITableHeaderCon
                         <ButtonGroup className={this.props.copyDownloadClassName} style={{ marginLeft:10 }}>
 
                             <DefaultTooltip overlay={<span>Copy</span>} placement="top" mouseLeaveDelay={0} mouseEnterDelay={0.5}  arrowContent={arrowContent}>
-                                    <button ref={(el: HTMLButtonElement)=>{ this._copyButton = el }} className="btn btn-sm btn-default" data-clipboard-text="blablabhabha" id="donkey" option-text={ this.getText }>
+                                    <button ref={(el: HTMLButtonElement)=>{ this._copyButton = el }} className="btn btn-sm btn-default" option-text={ this.getText }>
                                             <i className='fa fa-clipboard'/>
                                     </button>
                                 </DefaultTooltip>

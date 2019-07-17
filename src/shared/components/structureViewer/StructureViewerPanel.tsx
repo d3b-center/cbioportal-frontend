@@ -8,17 +8,19 @@ import {observer} from "mobx-react";
 import Draggable from 'react-draggable';
 import fileDownload from 'react-file-download';
 import classnames from 'classnames';
-import DefaultTooltip from "shared/components/defaultTooltip/DefaultTooltip";
+import {IProteinImpactTypeColors} from "react-mutation-mapper";
+import DefaultTooltip from "public-lib/components/defaultTooltip/DefaultTooltip";
 import PdbHeaderCache from "shared/cache/PdbHeaderCache";
 import ResidueMappingCache from "shared/cache/ResidueMappingCache";
 import {ResidueMapping} from "shared/api/generated/Genome2StructureAPI";
 import {CacheData} from "shared/lib/LazyMobXCache";
 import {ILazyMobXTableApplicationDataStore} from "shared/lib/ILazyMobXTableApplicationDataStore";
-import MutationMapperDataStore from "pages/resultsView/mutation/MutationMapperDataStore";
+import MutationMapperDataStore from "shared/components/mutationMapper/MutationMapperDataStore";
 import {Mutation} from "shared/api/generated/CBioPortalAPI";
 import {IPdbChain, PdbAlignmentIndex} from "shared/model/Pdb";
 import {
-    groupMutationsByProteinStartPos, getColorForProteinImpactType, IProteinImpactTypeColors,
+    groupMutationsByProteinStartPos,
+    getColorForProteinImpactType,
     getProteinStartPositionsByRange
 } from "shared/lib/MutationUtils";
 import StructureViewer from "./StructureViewer";
@@ -52,8 +54,8 @@ export default class StructureViewerPanel extends React.Component<IStructureView
 
     protected _3dMolDiv: HTMLDivElement|undefined;
 
-    constructor() {
-        super();
+    constructor(props:IStructureViewerPanelProps) {
+        super(props);
 
         this.containerRefHandler = this.containerRefHandler.bind(this);
         this.toggleCollapse = this.toggleCollapse.bind(this);
@@ -548,11 +550,13 @@ export default class StructureViewerPanel extends React.Component<IStructureView
         // if 3Dmol container div is not initialized yet, just set to a default value: width=auto; height=350
         // otherwise toggle the size
         if (this.isIncreasedSize) {
-            width = this._3dMolDiv ? Math.floor(this._3dMolDiv.offsetWidth * (5/3)) : "auto";
+            // TODO: hardocded default value to fix cBioPortal/cbioportal#4561
+            width = this._3dMolDiv ? Math.floor(this._3dMolDiv.offsetWidth * (5/3)) : 698;
             height = this._3dMolDiv ? this._3dMolDiv.offsetHeight * 2 : 350;
         }
         else {
-            width = this._3dMolDiv ? Math.floor(this._3dMolDiv.offsetWidth / (5/3)) : "auto";
+            // TODO: hardcoded default value to fix cBioPortal/cbioportal#4561
+            width = this._3dMolDiv ? Math.floor(this._3dMolDiv.offsetWidth / (5/3)) : 450;
             height = this._3dMolDiv ? this._3dMolDiv.offsetHeight / 2 : 350;
         }
 

@@ -1,15 +1,15 @@
 import * as React from 'react';
-import DefaultTooltip from 'shared/components/defaultTooltip/DefaultTooltip';
+import DefaultTooltip from 'public-lib/components/defaultTooltip/DefaultTooltip';
 import 'rc-tooltip/assets/bootstrap_white.css';
 import {VAFPlot, IVAFPlotProps, MutationFrequenciesBySample} from './VAFPlot';
-import Tooltip from "rc-tooltip";
+import Tooltip, {RCTooltip} from "rc-tooltip";
 
 export type IThumbnailExpandVAFPlotProps = {
     data: MutationFrequenciesBySample;
     order?: { [s:string]:number };
     colors?: { [s: string]:string };
     labels?: { [s:string]:string };
-    overlayPlacement?: Tooltip.Placement;
+    overlayPlacement?: RCTooltip.Placement;
     cssClass?: string;
 };
 

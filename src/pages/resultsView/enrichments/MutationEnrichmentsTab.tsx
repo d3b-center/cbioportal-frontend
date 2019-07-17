@@ -7,6 +7,9 @@ import Loader from 'shared/components/loadingIndicator/LoadingIndicator';
 import EnrichmentsDataSetDropdown from 'pages/resultsView/enrichments/EnrichmentsDataSetDropdown';
 import { MolecularProfile } from 'shared/api/generated/CBioPortalAPI';
 import autobind from 'autobind-decorator';
+import ErrorMessage from "../../../shared/components/ErrorMessage";
+import { AlterationContainerType } from './EnrichmentsUtil';
+import {makeUniqueColorGetter} from "shared/components/plots/PlotUtils";
 
 export interface IMutationEnrichmentsTabProps {
     store: ResultsViewPageStore
@@ -15,27 +18,47 @@ export interface IMutationEnrichmentsTabProps {
 @observer
 export default class MutationEnrichmentsTab extends React.Component<IMutationEnrichmentsTabProps, {}> {
 
+    private uniqueColorGetter = makeUniqueColorGetter();
+
     @autobind
     private onProfileChange(molecularProfile: MolecularProfile) {
-        this.props.store.selectedEnrichmentMutationProfile = molecularProfile;
+        this.props.store._selectedEnrichmentMutationProfile = molecularProfile;
     }
 
     public render() {
         if (this.props.store.mutationEnrichmentData.isPending) {
-            return <Loader isLoading={true} style={{ display:'inline-block', marginLeft:10, marginTop: 20 }} />;
-        }
+            return <Loader isLoading={true} center={true} size={"big"}/>;
+        } else if (this.props.store.mutationEnrichmentData.isError) {
+            return <ErrorMessage/>;
+        } else {
 
-        return (
-            <div data-test="MutationEnrichmentsTab">
-                <EnrichmentsDataSetDropdown dataSets={this.props.store.mutationEnrichmentProfiles.result!} onChange={this.onProfileChange}
-                    selectedValue={this.props.store.selectedEnrichmentMutationProfile.molecularProfileId} 
-                    molecularProfileIdToProfiledSampleCount={this.props.store.molecularProfileIdToProfiledSampleCount.result!}/>
-                <AlterationEnrichmentContainer data={this.props.store.mutationEnrichmentData.result!}
-                    totalAlteredCount={this.props.store.alteredSampleKeys.result!.length}
-                    totalUnalteredCount={this.props.store.unalteredSampleKeys.result!.length}
-                    headerName={this.props.store.selectedEnrichmentMutationProfile.name}
-                    store={this.props.store} alterationType="a mutation"/>
-            </div>
-        );
+            return (
+                <div data-test="MutationEnrichmentsTab">
+                    <EnrichmentsDataSetDropdown dataSets={this.props.store.mutationEnrichmentProfiles} onChange={this.onProfileChange}
+                        selectedValue={this.props.store.selectedEnrichmentMutationProfile.molecularProfileId}
+                        molecularProfileIdToProfiledSampleCount={this.props.store.molecularProfileIdToProfiledSampleCount}/>
+                    <AlterationEnrichmentContainer data={this.props.store.mutationEnrichmentData.result!}
+                        headerName={this.props.store.selectedEnrichmentMutationProfile.name}
+                        store={this.props.store}
+                        groups={[
+                            {
+                                name: "Altered group",
+                                description: "Number (percentage) of samples that have alterations in the query gene(s) that also have a mutation in the listed gene.",
+                                nameOfEnrichmentDirection: "Co-occurrence",
+                                count: this.props.store.alteredSampleKeys.result!.length,
+                                color:this.uniqueColorGetter(),
+                            }, {
+                                name: "Unaltered group",
+                                description: "Number (percentage) of samples that do not have alterations in the query gene(s) that have a mutation in the listed gene.",
+                                nameOfEnrichmentDirection: "Mutual exclusivity",
+                                count: this.props.store.unalteredSampleKeys.result!.length,
+                                color:this.uniqueColorGetter(),
+                            }
+                        ]}
+                        containerType={AlterationContainerType.MUTATION}
+                        />
+                </div>
+            );
+        }
     }
 }

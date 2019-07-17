@@ -2,9 +2,6 @@
 
 .oncoprint__controls {
 
-  display:flex;
-  padding-top:10px; /* this should be margin top but for some reason produces very strange jump affect */
-
   .rangeslider {
     margin:0;
     .rangeslider__labels {
@@ -25,7 +22,6 @@
     }
   }
 
-
   .dropdown-menu {
     width:270px;
     padding:12px !important;
@@ -36,6 +32,9 @@
     > :last-child {
       margin-bottom:0 !important;
     }
+    &.heatmap {
+      width:450px;
+    }  
   }
 
   .oncoprint__controls__heatmap_menu {
@@ -43,6 +42,7 @@
       width:100%;
       min-height:50px;
       border:1px solid $borderColor;
+      resize: vertical;
     }
     > *, button {
       margin-bottom:10px !important;
@@ -69,7 +69,7 @@
   }
 
   .oncoprint__controls__minimap_button {
-    padding: 4px 8px 6px 10px !important;
+    padding: 5px 8px 6px 10px !important;
   }
 
   .Select {
@@ -83,6 +83,43 @@
     .Select-input {
       height:32px;
     }
+
   }
 
+  .clinical-track-selector {
+    .Select-control {
+      height:33px;
+    }
+
+    .Select {
+
+      .Select-placeholder {
+        color: #000;
+      }
+
+      .Select-arrow {
+        border-color: #000 transparent transparent;
+      }
+
+      .Select-menu-outer {
+        max-height: 400px;
+      }
+
+      .Select-menu {
+        max-height: 398px; // needs to be 2 less than Select-menu-outer height to not hide border. Irrelevant
+                          //    as long as & > div > div:nth-child(2) max-height is less
+        overflow:hidden;
+
+        & > div > div:nth-child(2){
+          max-height:350px !important;
+          overflow-x:hidden !important;
+          overflow-y:scroll !important;
+        }
+      }
+    }
+  }
+
+  .clinical-track-selector .is-open .Select-control .Select-arrow {
+    border-color: transparent transparent #000;
+  }
 }

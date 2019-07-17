@@ -1,5 +1,5 @@
 import * as React from 'react';
-import DefaultTooltip from 'shared/components/defaultTooltip/DefaultTooltip';
+import DefaultTooltip from 'public-lib/components/defaultTooltip/DefaultTooltip';
 import 'rc-tooltip/assets/bootstrap_white.css';
 import {
     DiscreteCNACacheDataType,
@@ -30,6 +30,14 @@ export default class DiscreteCNAColumnFormatter {
         );
     }
 
+    public static getTextValue(data:Mutation[], molecularProfileIdToMolecularProfile: {[molecularProfileId:string]:MolecularProfile}, cache:DiscreteCNACache) : string {
+        const tdValue = DiscreteCNAColumnFormatter.getTdValue(DiscreteCNAColumnFormatter.getData(data, molecularProfileIdToMolecularProfile, cache));
+        if (tdValue !== null) {
+            return DiscreteCNAColumnFormatter.altToFilterString[tdValue];
+        }
+        return "";
+    }
+
     public static getSortValue(data:Mutation[], molecularProfileIdToMolecularProfile: {[molecularProfileId:string]:MolecularProfile}, cache:DiscreteCNACache) {
         return DiscreteCNAColumnFormatter.getTdValue(DiscreteCNAColumnFormatter.getData(data, molecularProfileIdToMolecularProfile, cache));
     }
@@ -49,6 +57,8 @@ export default class DiscreteCNAColumnFormatter {
         if (!data || data.length === 0 || !discreteCNACache.isActive) {
             return null;
         }
+        
+        
         const sampleId = data[0].sampleId;
         const entrezGeneId = data[0].entrezGeneId;
         const molecularProfile = molecularProfileIdToMolecularProfile[data[0].molecularProfileId];

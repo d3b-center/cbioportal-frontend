@@ -6,23 +6,24 @@ import {
 import {
     ClinicalAttribute,
     ClinicalData,
-    NumericGeneMolecularData, GenePanelData, MolecularProfile, Mutation, MutationCount, Patient,
+    NumericGeneMolecularData, GenePanelData, MolecularProfile, Mutation, Patient,
     Sample
 } from "../../api/generated/CBioPortalAPI";
 import {
     ClinicalTrackDatum,
-    GeneticTrackDatum,
+    GeneticTrackDatum, GeneticTrackDatum_Data,
     IBaseHeatmapTrackDatum,
     IGeneHeatmapTrackDatum,
 } from "./Oncoprint";
-import {isMutationCount, isSample, isSampleList} from "../../lib/CBioPortalAPIUtils";
-import {getSimplifiedMutationType, SimplifiedMutationType} from "../../lib/oql/accessors";
+import {isSample, isSampleList} from "../../lib/CBioPortalAPIUtils";
+import {getSimplifiedMutationType, SimplifiedMutationType} from "../../lib/oql/AccessorsForOqlFilter";
 import _ from "lodash";
-import {FractionGenomeAltered, MutationSpectrum} from "../../api/generated/CBioPortalAPIInternal";
-import {OncoprintClinicalAttribute} from "./ResultsViewOncoprint";
-import {CoverageInformation} from "../../../pages/resultsView/ResultsViewPageStoreUtils";
+import {MutationSpectrum} from "../../api/generated/CBioPortalAPIInternal";
+import {CoverageInformation, ExtendedClinicalAttribute} from "../../../pages/resultsView/ResultsViewPageStoreUtils";
 import { MUTATION_STATUS_GERMLINE } from "shared/constants";
-import {SpecialAttribute} from "../../cache/OncoprintClinicalDataCache";
+import {SpecialAttribute} from "../../cache/ClinicalDataCache";
+import {stringListToIndexSet} from "../../../public-lib/lib/StringUtils";
+import {isNotGermlineMutation} from "../../lib/MutationUtils";
 
 const cnaDataToString:{[integerCNA:string]:string|undefined} = {
     "-2": "homdel",
@@ -31,14 +32,18 @@ const cnaDataToString:{[integerCNA:string]:string|undefined} = {
     "1": "gain",
     "2": "amp"
 };
-const mutRenderPriority = {
-    'trunc_rec':1,
-    'inframe_rec':2,
-    'missense_rec':3,
-    'trunc': 4,
-    'inframe': 5,
-    'missense': 6
-};
+const mutRenderPriority = stringListToIndexSet([
+    'trunc_rec',
+    'inframe_rec',
+    'promoter_rec',
+    'missense_rec',
+    'other_rec',
+    'trunc',
+    'inframe',
+    'promoter',
+    'missense',
+    'other'
+]);
 const cnaRenderPriority = {
     'amp': 0,
     'homdel': 0,
@@ -46,17 +51,17 @@ const cnaRenderPriority = {
     'hetloss': 1
 };
 const mrnaRenderPriority = {
-    'up': 0,
-    'down': 0
+    'high': 0,
+    'low': 0
 };
 const protRenderPriority = {
-    'up': 0,
-    'down': 0
+    'high': 0,
+    'low': 0
 };
 
-export type OncoprintMutationType = "missense" | "inframe" | "fusion" | "promoter" | "trunc";
+export type OncoprintMutationType = "missense" | "inframe" | "fusion" | "promoter" | "trunc" | "other";
 
-export function getOncoprintMutationType(d:Mutation):OncoprintMutationType {
+export function getOncoprintMutationType(d:Pick<Mutation, "proteinChange"|"mutationType">):OncoprintMutationType {
     if ((d.proteinChange || "").toLowerCase() === "promoter") {
         // promoter mutations aren't labeled as such in mutationType, but in proteinChange, so we must detect it there
         return "promoter";
@@ -66,6 +71,7 @@ export function getOncoprintMutationType(d:Mutation):OncoprintMutationType {
             case "missense":
             case "inframe":
             case "fusion":
+            case "other":
                 return simplifiedMutationType;
             default:
                 return "trunc";
@@ -102,7 +108,7 @@ export function fillGeneticTrackDatum(
     // must already have all non-disp* fields except trackLabel and data
     newDatum:Partial<GeneticTrackDatum>,
     trackLabel:string,
-    data:AnnotatedExtendedAlteration[]
+    data:GeneticTrackDatum_Data[]
 ): GeneticTrackDatum {
     newDatum.trackLabel = trackLabel;
     newDatum.data = data;
@@ -119,7 +125,7 @@ export function fillGeneticTrackDatum(
         const molecularAlterationType = event.molecularProfileAlterationType;
         switch (molecularAlterationType) {
             case "COPY_NUMBER_ALTERATION":
-                const cnaEvent = cnaDataToString[(event as NumericGeneMolecularData).value];
+                const cnaEvent = cnaDataToString[event.value as NumericGeneMolecularData["value"]];
                 if (cnaEvent) {
                     // not diploid
                     dispCnaCounts[cnaEvent] = dispCnaCounts[cnaEvent] || 0;
@@ -141,7 +147,7 @@ export function fillGeneticTrackDatum(
                 }
                 break;
             case "MUTATION_EXTENDED":
-                let oncoprintMutationType = getOncoprintMutationType(event as Mutation);
+                let oncoprintMutationType = getOncoprintMutationType(event as Pick<Mutation, "proteinChange"|"mutationType">);
                 if (oncoprintMutationType === "fusion") {
                     dispFusion = true;
                 } else {
@@ -172,7 +178,7 @@ export function makeGeneticTrackData(
     hugoGeneSymbols:string|string[],
     samples:Sample[],
     genePanelInformation:CoverageInformation,
-    selectedMolecularProfiles:MolecularProfile[]
+    selectedMolecularProfiles:MolecularProfile[],
 ):GeneticTrackDatum[];
 
 export function makeGeneticTrackData(
@@ -180,7 +186,7 @@ export function makeGeneticTrackData(
     hugoGeneSymbols:string|string[],
     patients:Patient[],
     genePanelInformation:CoverageInformation,
-    selectedMolecularProfiles:MolecularProfile[]
+    selectedMolecularProfiles:MolecularProfile[],
 ):GeneticTrackDatum[];
 
 export function makeGeneticTrackData(
@@ -188,7 +194,7 @@ export function makeGeneticTrackData(
     hugoGeneSymbols:string|string[],
     cases:Sample[]|Patient[],
     genePanelInformation:CoverageInformation,
-    selectedMolecularProfiles:MolecularProfile[]
+    selectedMolecularProfiles:MolecularProfile[],
 ):GeneticTrackDatum[] {
     if (!cases.length) {
         return [];
@@ -201,6 +207,7 @@ export function makeGeneticTrackData(
         for (const sample of cases) {
             const newDatum:Partial<GeneticTrackDatum> = {};
             newDatum.sample = sample.sampleId;
+            newDatum.patient = sample.patientId;
             newDatum.study_id = sample.studyId;
             newDatum.uid = sample.uniqueSampleKey;
 
@@ -210,7 +217,7 @@ export function makeGeneticTrackData(
                 hugoGeneSymbol => sampleSequencingInfo.byGene[hugoGeneSymbol] || []
             );
             newDatum.profiled_in = newDatum.profiled_in.concat(sampleSequencingInfo.allGenes).filter(p=>!!_selectedMolecularProfiles[p.molecularProfileId]); // filter out coverage information about non-selected profiles
-            if (!newDatum.profiled_in.length) {
+            if (!newDatum.profiled_in!.length) {
                 newDatum.na = true;
             }
             newDatum.not_profiled_in = _.flatMap(
@@ -219,10 +226,11 @@ export function makeGeneticTrackData(
             );
             newDatum.not_profiled_in = newDatum.not_profiled_in.concat(sampleSequencingInfo.notProfiledAllGenes).filter(p=>!!_selectedMolecularProfiles[p.molecularProfileId]); // filter out coverage information about non-selected profiles
 
+            let sampleData = caseAggregatedAlterationData[sample.uniqueSampleKey];
             ret.push(fillGeneticTrackDatum(
                 newDatum,
                 geneSymbolArray.join(' / '),
-                caseAggregatedAlterationData[sample.uniqueSampleKey]
+                sampleData
             ));
         }
     } else {
@@ -239,7 +247,7 @@ export function makeGeneticTrackData(
                 hugoGeneSymbol => patientSequencingInfo.byGene[hugoGeneSymbol] || []
             );
             newDatum.profiled_in = newDatum.profiled_in.concat(patientSequencingInfo.allGenes).filter(p=>!!_selectedMolecularProfiles[p.molecularProfileId]); // filter out coverage information about non-selected profiles
-            if (!newDatum.profiled_in.length) {
+            if (!newDatum.profiled_in!.length) {
                 newDatum.na = true;
             }
             newDatum.not_profiled_in = _.flatMap(
@@ -248,10 +256,11 @@ export function makeGeneticTrackData(
             );
             newDatum.not_profiled_in = newDatum.not_profiled_in.concat(patientSequencingInfo.notProfiledAllGenes).filter(p=>!!_selectedMolecularProfiles[p.molecularProfileId]); // filter out coverage information about non-selected profiles
 
+            let patientData = caseAggregatedAlterationData[patient.uniquePatientKey];
             ret.push(fillGeneticTrackDatum(
                 newDatum,
                 geneSymbolArray.join(' / '),
-                caseAggregatedAlterationData[patient.uniquePatientKey]
+                patientData
             ));
         }
     }
@@ -266,7 +275,7 @@ export function fillHeatmapTrackDatum<T extends IBaseHeatmapTrackDatum, K extend
     data?: {value: number}[]
 ) {
     trackDatum[featureKey] = featureId;
-    trackDatum.study = case_.studyId;
+    trackDatum.study_id = case_.studyId;
     if (!data || !data.length) {
         trackDatum.profile_data = null;
         trackDatum.na = true;
@@ -330,9 +339,9 @@ export function makeHeatmapTrackData<T extends IBaseHeatmapTrackDatum, K extends
 
 function fillNoDataValue(
     trackDatum:Partial<ClinicalTrackDatum>,
-    attribute:OncoprintClinicalAttribute,
+    attribute:ExtendedClinicalAttribute,
 ) {
-    if (attribute.clinicalAttributeId === SpecialAttribute.MutationCount) {
+    if (attribute.clinicalAttributeId === "MUTATION_COUNT") {
         trackDatum.attr_val = 0;
     } else {
         trackDatum.na = true;
@@ -340,9 +349,9 @@ function fillNoDataValue(
 }
 export function fillClinicalTrackDatum(
     trackDatum:Partial<ClinicalTrackDatum>,
-    attribute:OncoprintClinicalAttribute,
+    attribute:ExtendedClinicalAttribute,
     case_:Sample|Patient,
-    data?:(ClinicalData|MutationCount|FractionGenomeAltered|MutationSpectrum)[],
+    data?:(ClinicalData|MutationSpectrum)[],
 ) {
     trackDatum.attr_id = attribute.clinicalAttributeId;
     trackDatum.study_id = case_.studyId;
@@ -352,26 +361,27 @@ export function fillClinicalTrackDatum(
         fillNoDataValue(trackDatum, attribute);
     } else {
         if (attribute.datatype.toLowerCase() === "number") {
-            let numValCount = 0;
-            let numValSum = 0;
+            let values = [];
             for (const x of data) {
-                if (isMutationCount(x)) {
-                    numValCount += 1;
-                    numValSum += x.mutationCount;
-                } else {
-                    const newVal = parseFloat((x as ClinicalData|FractionGenomeAltered).value+"");
-                    if (!isNaN(newVal)) {
-                        numValCount += 1;
-                        numValSum += newVal;
-                    }
+                const newVal = parseFloat((x as ClinicalData).value+"");
+                if (!isNaN(newVal)) {
+                    values.push(newVal);
                 }
             }
-            if (numValCount === 0) {
+            if (values.length === 0) {
                 fillNoDataValue(trackDatum, attribute);
             } else {
-                // average
-                trackDatum.attr_val = numValSum / numValCount;
-                trackDatum.attr_val_counts[trackDatum.attr_val] = 1;
+                switch (attribute.clinicalAttributeId) {
+                    case "MUTATION_COUNT":
+                        // max
+                        trackDatum.attr_val = values.reduce((max, nextVal)=>Math.max(max, nextVal), Number.NEGATIVE_INFINITY);
+                        break;
+                    default:
+                        // average
+                        trackDatum.attr_val = values.reduce((sum, nextVal)=>sum+nextVal, 0) / values.length;
+                        break;
+                }
+                trackDatum.attr_val_counts[trackDatum.attr_val!] = 1;
             }
         } else if (attribute.datatype.toLowerCase() === "string") {
             const attr_val_counts = trackDatum.attr_val_counts;
@@ -421,8 +431,8 @@ export function fillClinicalTrackDatum(
 function makeGetDataForCase(
     attribute: ClinicalAttribute,
     queryBy:"sample"|"patient",
-    data: (ClinicalData|MutationCount|FractionGenomeAltered|MutationSpectrum)[]
-):(case_:Sample|Patient)=>(ClinicalData|MutationCount|FractionGenomeAltered|MutationSpectrum)[] {
+    data: (ClinicalData|MutationSpectrum)[]
+):(case_:Sample|Patient)=>(ClinicalData|MutationSpectrum)[] {
     if (attribute.patientAttribute) {
         const uniqueKeyToData = _.groupBy(data, datum=>datum.uniquePatientKey);
         return function(case_:Sample|Patient) {
@@ -442,10 +452,10 @@ function makeGetDataForCase(
 export function makeClinicalTrackData(
     attribute:ClinicalAttribute,
     cases:Sample[]|Patient[],
-    data: (ClinicalData|MutationCount|FractionGenomeAltered|MutationSpectrum)[],
+    data: (ClinicalData|MutationSpectrum)[],
 ):ClinicalTrackDatum[] {
     // First collect all the data by id
-    const uniqueKeyToData:{[uniqueKey:string]:(ClinicalData|MutationCount|FractionGenomeAltered|MutationSpectrum)[]}
+    const uniqueKeyToData:{[uniqueKey:string]:(ClinicalData|MutationSpectrum)[]}
         = _.groupBy(data,
         isSampleList(cases) ?
             datum=>datum.uniqueSampleKey :

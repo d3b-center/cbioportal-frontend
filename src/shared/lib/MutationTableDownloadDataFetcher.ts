@@ -1,17 +1,23 @@
 import MobxPromise from "mobxpromise";
 import {ILazyMobXTableApplicationLazyDownloadDataFetcher} from "shared/lib/ILazyMobXTableApplicationLazyDownloadDataFetcher";
 import LazyMobXCache from "shared/lib/LazyMobXCache";
-import {default as GenomeNexusEnrichmentCache, fetch as fetchGenomeNexusData} from "shared/cache/GenomeNexusEnrichment";
 import {default as MutationCountCache, fetch as fetchMutationCountData} from "shared/cache/MutationCountCache";
-import {Mutation} from "shared/api/generated/CBioPortalAPI";
+import {default as GenomeNexusCache, fetch as fetchGenomeNexusData } from "shared/cache/GenomeNexusCache";
+import {default as DiscreteCNACache, fetch as fetchDiscreteCNAData} from "shared/cache/DiscreteCNACache";
+import {Mutation, MolecularProfile} from "shared/api/generated/CBioPortalAPI";
+import _ from 'lodash';
+import {default as GenomeNexusMyVariantInfoCache, fetch as fetchGenomeNexusMyVariantInfoData } from "shared/cache/GenomeNexusMyVariantInfoCache";
 
 export class MutationTableDownloadDataFetcher implements ILazyMobXTableApplicationLazyDownloadDataFetcher
 {
     private allData:any[]|undefined = undefined;
 
     constructor(private mutationData: MobxPromise<Mutation[]>,
-                private genomeNexusEnrichmentCache?: () => GenomeNexusEnrichmentCache,
-                private mutationCountCache?: () => MutationCountCache) {
+                private studyToMolecularProfileDiscrete?: {[studyId:string]:MolecularProfile},
+                private genomeNexusCache?: () => GenomeNexusCache,
+                private genomeNexusMyVariantInfoCache?: () => GenomeNexusMyVariantInfoCache,
+                private mutationCountCache?: () => MutationCountCache,
+                private discreteCNACache?: () => DiscreteCNACache) {
         // TODO labelMobxPromises(this); ?
     }
 
@@ -42,10 +48,16 @@ export class MutationTableDownloadDataFetcher implements ILazyMobXTableApplicati
         const promises:Promise<any>[] = [];
         const caches:LazyMobXCache<any, any>[] = [];
 
-        if (this.genomeNexusEnrichmentCache)
+        if (this.genomeNexusCache)
         {
-            promises.push(this.fetchAllGenomeNexusEnrichmentData());
-            caches.push(this.genomeNexusEnrichmentCache());
+            promises.push(this.fetchAllGenomeNexusData());
+            caches.push(this.genomeNexusCache());
+        }
+
+        if (this.genomeNexusMyVariantInfoCache)
+        {
+            promises.push(this.fetchAllGenomeNexusMyVariantInfoData());
+            caches.push(this.genomeNexusMyVariantInfoCache());
         }
 
         if (this.mutationCountCache)
@@ -54,14 +66,31 @@ export class MutationTableDownloadDataFetcher implements ILazyMobXTableApplicati
             caches.push(this.mutationCountCache());
         }
 
+        if (this.discreteCNACache)
+        {
+            promises.push(this.fetchAllDiscreteCNAData());
+            caches.push(this.discreteCNACache());           
+        }
+
         return {promises, caches};
     }
 
-    private async fetchAllGenomeNexusEnrichmentData()
+    private async fetchAllGenomeNexusData()
     {
         if (this.mutationData.result)
         {
             return await fetchGenomeNexusData(this.mutationData.result);
+        }
+        else {
+            return undefined;
+        }
+    }
+
+    private async fetchAllGenomeNexusMyVariantInfoData()
+    {
+        if (this.mutationData.result)
+        {
+            return await fetchGenomeNexusMyVariantInfoData(this.mutationData.result);
         }
         else {
             return undefined;
@@ -73,9 +102,29 @@ export class MutationTableDownloadDataFetcher implements ILazyMobXTableApplicati
         if (this.mutationData.result)
         {
             const queries = this.mutationData.result.map(
-                mutation => ({sampleId: mutation.sampleId, molecularProfileId: mutation.molecularProfileId}));
+                mutation => ({sampleId: mutation.sampleId, studyId: mutation.studyId}));
 
             return await fetchMutationCountData(queries);
+        }
+        else {
+            return undefined;
+        }
+    }
+
+    private async fetchAllDiscreteCNAData()
+    {
+        if (this.mutationData.result)
+        {
+            const queries = this.mutationData.result.map(
+                mutation => ({sampleId: mutation.sampleId, studyId: mutation.studyId, entrezGeneId: mutation.entrezGeneId}));
+            const cnaData = await fetchDiscreteCNAData(queries, this.studyToMolecularProfileDiscrete!);
+            const modifiedCNAData = _.flatten(_.map(cnaData, (rawData) => {
+                const mappedArray = _.map(_.flatten(rawData.data), (props) => {
+                    return {...props, studyId: rawData.meta}
+                })
+                return mappedArray;
+            }));
+            return modifiedCNAData;
         }
         else {
             return undefined;

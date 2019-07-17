@@ -1,9 +1,9 @@
 # cbioportal-frontend
 [![Join the chat at https://gitter.im/cBioPortal/public-chat](https://badges.gitter.im/cBioPortal/public-chat.svg)](https://gitter.im/cBioPortal/public-chat?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 ## Live demo
-Master: http://cbioportal-frontend.herokuapp.com/#/patient?studyId=prad_fhcrc&caseId=00-090
+Master: http://cbioportal-frontend.herokuapp.com/patient?studyId=prad_fhcrc&caseId=00-090
 
-Rc: http://cbioportal-frontend-rc.herokuapp.com/#/patient?studyId=prad_fhcrc&caseId=00-090
+Rc: http://cbioportal-frontend-rc.herokuapp.com/patient?studyId=prad_fhcrc&caseId=00-090
 
 ## Test status & Code Quality
 | Branch | master | rc |
@@ -28,14 +28,14 @@ Remove old compiled `node_modules` if exists
 rm -rf node_modules
 ```
 
-To install all app and dev dependencies 
+To install all app and dev dependencies
 ```
-npm install
+yarn install --frozen-lockfile
 ```
 
 To build DLLs in common-dist folder (must be done prior to start of dev server)
 ```
-npm run buildDLL:dev
+yarn run buildDLL:dev
 ```
 
 To start dev server with hot reload enabled
@@ -44,31 +44,31 @@ To start dev server with hot reload enabled
 # from
 export BRANCH_ENV=master # or rc if branching from rc
 # export any custom external API URLs by editing env/custom.sh
-npm run start
+yarn run start
 ```
 
 Example pages:
  - http://localhost:3000/
- - http://localhost:3000/#/patient?studyId=lgg_ucsf_2014&caseId=P04
+ - http://localhost:3000/patient?studyId=lgg_ucsf_2014&caseId=P04
 
 To run unit/integration tests (need to have API URL defined in `.env`)
 ```
-npm run test
+yarn run test
 ```
 
 To run unit/integration tests in watch mode
 ```
-npm run test:watch
+yarn run test:watch
 ```
 
 To run unit/integration tests in watch mode (where specName is a fragment of the name of the spec file (before .spec.))
 ```
-npm run test:watch -- --grep=#specName#
+yarn run test:watch -- --grep=#specName#
 ```
 
 To run linting
 ```
-npm run lint
+yarn run lint
 ```
 
 ## precommit hook
@@ -88,8 +88,8 @@ endpoint works with the checked in client by changing the API URL in
 # from
 export BRANCH_ENV=master # or rc if branching from rc
 # export any custom external API URLs by editing env/custom.sh
-npm run updateAPI
-npm run test
+yarn run updateAPI
+yarn run test
 ```
 
 ## Check in cBioPortal context
@@ -117,7 +117,7 @@ Change `x` to the number of your pull request.
 
 Install webdriver-manager, which manages standalone Selenium installation:
 ```
-npm install -g webdriver-manager
+yarn install -g webdriver-manager
 ```
 Run updater to get necessary binaries
 ```
@@ -134,7 +134,7 @@ In one terminal run frontend (this will get mounted inside whatever
 # from
 export BRANCH_ENV=master # or rc if branching from rc
 # export any custom external API URLs by editing env/custom.sh
-npm run start
+yarn run start
 ```
 In another terminal run the e2e tests
 ```bash
@@ -143,6 +143,21 @@ In another terminal run the e2e tests
 export BRANCH_ENV=master # or rc if branching from rc
 # export any custom external API URLs in env/custom.sh
 cd end-to-end-tests
-npm install
-npm run test-webdriver-manager
+yarn install
+yarn run test-webdriver-manager
 ```
+
+## Components
+
+### cbioportal-frontend-commons
+
+[cbioportal-frontend-commons](https://www.npmjs.com/package/cbioportal-frontend-commons/) is a separate npm library which is internally hosted under the `src/public-lib` directory. 
+This library contains basic utility functions and components, and it is designed as a dependency for external react libraries and applications.
+ 
+Components/utils added under `src/public-lib` should only depend on either external node modules or components/utils under `src/public-lib`.
+Please make sure to not introduce any internal dependencies (from directories under `src` other than `public-lib`) when updating or adding new files under `src/public-lib`.
+
+### react-mutation-mapper
+
+Mutation Mapper component has been moved to a separate GitHub repository: [cBioPortal/react-mutation-mapper](https://github.com/cBioPortal/react-mutation-mapper).
+For more information about `react-mutation-mapper` development please see [react-mutation-mapper.md](docs/react-mutation-mapper.md).

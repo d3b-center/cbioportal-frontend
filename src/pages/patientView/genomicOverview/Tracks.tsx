@@ -5,7 +5,6 @@ import * as tracksHelper from './tracksHelper'
 import {CopyNumberSeg, Mutation, Sample} from 'shared/api/generated/CBioPortalAPI';
 import SampleManager from "../sampleManager";
 import {ClinicalDataBySampleId} from "../../../shared/api/api-types-extended";
-import {stringListToSet} from "../../../shared/lib/StringUtils";
 
 interface TracksPropTypes {
     mutations:Array<Mutation>;
@@ -16,10 +15,6 @@ interface TracksPropTypes {
 }
 
 export default class Tracks extends React.Component<TracksPropTypes, {}> {
-
-    constructor(){
-        super();
-    }
 
     componentDidMount() {
 

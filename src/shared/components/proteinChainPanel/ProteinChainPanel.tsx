@@ -4,15 +4,16 @@ import PdbChainTable from "./PdbChainTable"
 import {observer} from "mobx-react";
 import {computed, observable, action, IReactionDisposer, reaction} from "mobx";
 import {ProteinChainSpec} from "./ProteinChainView";
-import Collapse from "react-collapse";
-import DefaultTooltip from "shared/components/defaultTooltip/DefaultTooltip";
-import {HitZone} from "../HitZone";
+import {Collapse} from "react-collapse";
+import DefaultTooltip from "public-lib/components/defaultTooltip/DefaultTooltip";
+import {HitZone} from "public-lib/components/HitZone";
 import ProteinChain from "./ProteinChain";
-import {MutationMapperStore} from "../../../pages/resultsView/mutation/MutationMapperStore";
+import MutationMapperStore from "shared/components/mutationMapper/MutationMapperStore";
 import {ALIGNMENT_GAP, IPdbChain} from "../../model/Pdb";
 import PdbHeaderCache from "../../cache/PdbHeaderCache";
 import PdbChainInfo from "../PdbChainInfo";
 import onNextRenderFrame from "shared/lib/onNextRenderFrame";
+import setWindowVariable from "../../lib/setWindowVariable";
 
 type ProteinChainPanelProps = {
     store:MutationMapperStore;
@@ -51,6 +52,7 @@ export default class ProteinChainPanel extends React.Component<ProteinChainPanel
 
     constructor(props:ProteinChainPanelProps) {
         super(props);
+
         this.handlers = {
             onMouseEnter:action(()=>{
                 this.expandTimeout = window.setTimeout(()=>{
@@ -204,6 +206,10 @@ export default class ProteinChainPanel extends React.Component<ProteinChainPanel
         );
     }
 
+    componentDidMount() {
+        onNextRenderFrame(() => this.props.store.pdbChainDataStore.selectFirstChain());
+    }
+
     componentDidUpdate() {
         onNextRenderFrame(()=>{
           if (this.chainDiv) {
@@ -248,17 +254,16 @@ export default class ProteinChainPanel extends React.Component<ProteinChainPanel
                     <div style={{
                         position:'relative',
                     }}>
-                        <div className="small" style={{display: this.isExpanded ? "inherit" : "none", position: "absolute", left: 20}}>
-                            PDB
+                        <div className="small" style={{position: "absolute"}}>
+                            {/* Place holder for a possible PDB icon, for now manually aligning with a margin */}
+                            <span style={{marginLeft: 16}} >PDB Chains</span>
                             <DefaultTooltip
                                 placement="left"
                                 overlay={this.helpTooltipContent}
                                 destroyTooltipOnHide={true}
                             >
-                                <i className="fa fa-info-circle" style={{paddingLeft: 5}} />
+                                <i className="fa fa-info-circle" style={{paddingLeft: 3}} />
                             </DefaultTooltip>
-                            <br/>
-                            Chains
                         </div>
                         <div
                             ref={this.handlers.chainDivRef}

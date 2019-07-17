@@ -1,5 +1,14 @@
 import * as _ from 'lodash';
-import {Query, EvidenceQueries, EvidenceQueryRes, Evidence, IndicatorQueryResp} from "shared/api/generated/OncoKbAPI";
+import {Evidence, EvidenceQueries, EvidenceQueryRes, IndicatorQueryResp, Query} from "shared/api/generated/OncoKbAPI";
+import {Mutation} from "shared/api/generated/CBioPortalAPI";
+import {IOncoKbData} from "shared/model/OncoKB";
+import {OncoKbTreatment} from "../components/annotation/oncokb/OncoKbCard";
+import {
+    generateQueryVariant as generateGenericQueryVariant,
+    generatePartialEvidenceQuery,
+    generateQueryVariantId,
+    LEVELS,
+} from "public-lib/lib/OncoKbUtils";
 
 /**
  * @author Selcuk Onur Sumer
@@ -19,9 +28,9 @@ const ONCOGENIC_CLASS_NAMES:{[oncogenic:string]: string} = {
 // oncogenic value => score
 // (used for sorting purposes)
 const ONCOGENIC_SCORE:{[oncogenic:string]: number} = {
-    'Unknown': 1,
-    'Inconclusive': 1,
-    'Likely Neutral': 3,
+    'Unknown': 0,
+    'Inconclusive': 0,
+    'Likely Neutral': 0,
     'Predicted Oncogenic': 5,
     'Likely Oncogenic': 5,
     'Oncogenic': 5
@@ -46,16 +55,6 @@ const RESISTANCE_LEVEL_SCORE:{[level:string]: number} = {
     'R1': 3,
 };
 
-const LEVELS = {
-    sensitivity: ['4', '3B', '3A', '2B', '2A', '1', '0'],
-    resistance: ['R3', 'R2', 'R1'],
-    all: ['4', 'R3', '3B', '3A', 'R2', '2B', '2A', 'R1', '1', '0']
-};
-
-export enum AlterationTypes {
-    Mutation = 0
-}
-
 export function generateIdToIndicatorMap(data:IndicatorQueryResp[]): {[queryId:string]: IndicatorQueryResp}
 {
     const map:{[queryId:string]: IndicatorQueryResp} = {};
@@ -67,15 +66,12 @@ export function generateIdToIndicatorMap(data:IndicatorQueryResp[]): {[queryId:s
     return map;
 }
 
-export function generateEvidenceQuery(queryVariants:Query[]): EvidenceQueries
+export function generateEvidenceQuery(queryVariants:Query[], evidenceTypes?:string): EvidenceQueries
 {
     return {
-        evidenceTypes: "GENE_SUMMARY,GENE_BACKGROUND,ONCOGENIC,MUTATION_EFFECT,VUS,MUTATION_SUMMARY,TUMOR_TYPE_SUMMARY,STANDARD_THERAPEUTIC_IMPLICATIONS_FOR_DRUG_SENSITIVITY,STANDARD_THERAPEUTIC_IMPLICATIONS_FOR_DRUG_RESISTANCE,INVESTIGATIONAL_THERAPEUTIC_IMPLICATIONS_DRUG_SENSITIVITY,INVESTIGATIONAL_THERAPEUTIC_IMPLICATIONS_DRUG_RESISTANCE",
-        highestLevelOnly: false,
-        levels: ['LEVEL_1', 'LEVEL_2A', 'LEVEL_2B', 'LEVEL_3A', 'LEVEL_3B', 'LEVEL_4', 'LEVEL_R1'],
-        queries: queryVariants,
-        source: "cbioportal"
-    };
+        ...generatePartialEvidenceQuery(evidenceTypes),
+        queries: queryVariants
+    } as EvidenceQueries;
 }
 
 export function generateQueryVariant(entrezGeneId:number,
@@ -86,61 +82,15 @@ export function generateQueryVariant(entrezGeneId:number,
                                      proteinPosEnd?:number,
                                      alterationType?:string): Query
 {
-    return {
-        id: generateQueryVariantId(entrezGeneId, tumorType, alteration, mutationType),
-        hugoSymbol: '',
-        tumorType:(tumorType as string), // generated api typings are wrong, it can accept null
-        alterationType: alterationType || AlterationTypes[AlterationTypes.Mutation],
-        entrezGeneId: entrezGeneId,
-        alteration: alteration || "",
-        consequence: mutationType || "any",
-        proteinStart: proteinPosStart === undefined ? -1 : proteinPosStart,
-        proteinEnd: proteinPosEnd === undefined ? -1 : proteinPosEnd,
-        type: "web",
-        hgvs: "",
-        svType: "DELETION" // TODO: hack because svType is not optional
-    };
-}
-
-export function generateQueryVariantId(entrezGeneId:number,
-                                       tumorType:string | null,
-                                       alteration?:string,
-                                       mutationType?:string): string
-{
-    let id = (tumorType) ? `${entrezGeneId}_${tumorType}` : `${entrezGeneId}`;
-
-    if (alteration) {
-        id = `${id}_${alteration}`;
-    }
-
-    if (mutationType) {
-        id = `${id}_${mutationType}`;
-    }
-
-    return id.trim().replace(/\s/g, "_");
+    return generateGenericQueryVariant(
+        entrezGeneId, tumorType, alteration, mutationType, proteinPosStart, proteinPosEnd, alterationType
+    ) as Query;
 }
 
 // TODO evidence:IEvidence
 export function extractPmids(evidence:any)
 {
     let refs:number[] = [];
-
-    if (evidence.mutationEffect &&
-        evidence.mutationEffect.refs &&
-        evidence.mutationEffect.refs.length > 0)
-    {
-        refs = refs.concat(evidence.mutationEffect.refs.map((article:any) => {
-            return Number(article.pmid);
-        }));
-    }
-
-    if (evidence.oncogenicRefs &&
-        evidence.oncogenicRefs.length > 0)
-    {
-        refs = refs.concat(evidence.oncogenicRefs.map((article:any) => {
-            return Number(article.pmid);
-        }));
-    }
 
     if (evidence.treatments &&
         _.isArray(evidence.treatments.sensitivity))
@@ -189,8 +139,52 @@ export function normalizeLevel(level:string):string|null
     }
 }
 
-export function oncogenicImageClassNames(oncogenic:string,
-                                         isVUS:boolean,
+export function oncogenicXPosition(highestSensitiveLevel: string | null) {
+    const map: { [id: string]: number } = {
+        '1': 1,
+        '2A': 2,
+        '2B': 3,
+        '3A': 4,
+        '3B': 5,
+        '4': 6
+    };
+
+    let levelIndex = highestSensitiveLevel === null ? 0 : (map[highestSensitiveLevel] || 0);
+    return -(8 + levelIndex * 30);
+}
+
+export function oncogenicYPosition(oncogenicity: string, isVUS: boolean, resistanceLevel: string | null) {
+    const oncogenicityMap: { [id: string]: number } = {
+        'Oncogenic': 0,
+        'Predicted Oncogenic': 0,
+        'Likely Oncogenic': 0,
+        'Neutral': 1,
+        'Likely Neutral': 1,
+        'Unknown': 2,
+        'Inconclusive': 2
+    };
+    const resistanceLevelMap: { [id: string]: number } = {
+        'R1': 1,
+        'R2': 2,
+        'R3': 3
+    };
+
+    let oncogenicityIndex = oncogenicityMap[oncogenicity];
+    if (oncogenicityIndex === undefined) {
+        oncogenicityIndex = 4;
+    }
+    if (oncogenicityIndex > 1 && isVUS) {
+        oncogenicityIndex = 3;
+    }
+
+    const defaultIndexForUnrecognizedResistanceLevel = 0;
+    let resistanceLevelIndex = resistanceLevel === null ? defaultIndexForUnrecognizedResistanceLevel
+        : (resistanceLevelMap[resistanceLevel] || defaultIndexForUnrecognizedResistanceLevel);
+    return -(7 + oncogenicityIndex * 120 + resistanceLevelIndex * 30);
+}
+
+export function oncogenicImageClassNames(oncogenic: string,
+                                         isVUS: boolean,
                                          highestSensitiveLevel:string,
                                          highestResistanceLevel:string):string[]
 {
@@ -222,15 +216,9 @@ export function oncogenicImageClassNames(oncogenic:string,
     return classNames;
 }
 
-export function calcOncogenicScore(oncogenic:string, isVus:boolean)
+export function calcOncogenicScore(oncogenic:string)
 {
-    let score:number = ONCOGENIC_SCORE[oncogenic] || 0;
-
-    if (isVus && score === 0) {
-        score += 0.5;
-    }
-
-    return score;
+    return ONCOGENIC_SCORE[oncogenic] || 0;
 }
 
 export function calcSensitivityLevelScore(level:string)
@@ -260,15 +248,39 @@ export function initEvidence()
         oncogenicRefs: [],
         mutationEffect: {},
         mutationEffectRefs: [],
-        summary: '',
-        drugs: {
-            sensitivity: {
-                current: [],
-                inOtherTumor: []
-            },
-            resistance: []
-        }
+        summary: ''
     };
+}
+
+export function getIndicatorData(mutation: Mutation, oncoKbData: IOncoKbData): IndicatorQueryResp|undefined
+{
+    if (oncoKbData.uniqueSampleKeyToTumorType === null || oncoKbData.indicatorMap === null) {
+        return undefined;
+    }
+
+    const id = generateQueryVariantId(mutation.gene.entrezGeneId,
+        oncoKbData.uniqueSampleKeyToTumorType[mutation.uniqueSampleKey],
+        mutation.proteinChange,
+        mutation.mutationType);
+
+    return oncoKbData.indicatorMap[id];
+}
+
+export function getEvidenceQuery(mutation: Mutation, oncoKbData: IOncoKbData): Query|undefined
+{
+    // return null in case sampleToTumorMap is null
+    return oncoKbData.uniqueSampleKeyToTumorType ? generateQueryVariant(mutation.gene.entrezGeneId,
+        oncoKbData.uniqueSampleKeyToTumorType[mutation.uniqueSampleKey],
+        mutation.proteinChange,
+        mutation.mutationType,
+        mutation.proteinPosStart,
+        mutation.proteinPosEnd
+    ) : undefined;
+}
+
+// TODO remove when done refactoring mutation mapper
+export function defaultOncoKbIndicatorFilter(indicator: IndicatorQueryResp) {
+    return indicator.oncogenic.toLowerCase().trim().includes("oncogenic");
 }
 
 export function processEvidence(evidences:EvidenceQueryRes[]) {
@@ -277,7 +289,6 @@ export function processEvidence(evidences:EvidenceQueryRes[]) {
         evidences.forEach(function(record) {
             var id = record.query.id;
             let datum:any = initEvidence(); // TODO define an extended evidence model?
-            var hasHigherLevelEvidence = false;
             var sensitivityTreatments:any = [];
             var resistanceTreatments:any = [];
 
@@ -320,16 +331,12 @@ export function processEvidence(evidences:EvidenceQueryRes[]) {
                         _treatment.tumorType = getTumorTypeFromEvidence(evidence);
                         _treatment.level = evidence.levelOfEvidence;
                         _treatment.content = evidence.treatments;
-                        _treatment.description = description || 'No yet curated';
+                        _treatment.description = description || '';
 
                         if (LEVELS.sensitivity.indexOf(getLevel(evidence.levelOfEvidence)) !== -1) {
                             sensitivityTreatments.push(_treatment);
                         } else {
                             resistanceTreatments.push(_treatment);
-                        }
-
-                        if (_treatment.level === 'LEVEL_1' || _treatment.level === 'LEVEL_2A') {
-                            hasHigherLevelEvidence = true;
                         }
                     }
                 }
@@ -339,28 +346,8 @@ export function processEvidence(evidences:EvidenceQueryRes[]) {
                 datum.mutationEffect = datum.alteration[0];
             }
 
-            if (hasHigherLevelEvidence) {
-                sensitivityTreatments.forEach(function(treatment:any, index:number) {
-                    if (treatment.level !== 'LEVEL_2B') {
-                        datum.treatments.sensitivity.push(treatment);
-                    }
-                });
-            } else {
-                datum.treatments.sensitivity = sensitivityTreatments;
-            }
+            datum.treatments.sensitivity = sensitivityTreatments;
             datum.treatments.resistance = resistanceTreatments;
-            datum.treatments.sensitivity.forEach(function(treatment:any, index:number) {
-                if (treatment.level === 'LEVEL_2B') {
-                    datum.drugs.sensitivity.inOtherTumor.push(treatment);
-                } else if (treatment.level === 'LEVEL_2A' || treatment.level === 'LEVEL_1') {
-                    datum.drugs.sensitivity.current.push(treatment);
-                }
-            });
-            datum.treatments.resistance.forEach(function(treatment:any, index:number) {
-                if (treatment.level === 'LEVEL_R1') {
-                    datum.drugs.resistance.push(treatment);
-                }
-            });
             // id.split('*ONCOKB*').forEach(function(_id) {
             //     result[_id] = datum;
             // })
@@ -395,18 +382,10 @@ export function generateOncogenicCitations(oncogenicRefs:any):number[]
         }).sort() : [];
 }
 
-export function generateMutationEffectCitations(mutationEffectRefs:any):number[]
-{
-    return _.isArray(mutationEffectRefs) ?
-        _.map(mutationEffectRefs, (article:any) => {
-            return Number(article.pmid);
-        }).sort() : [];
-}
-
 export function generateTreatments(evidenceTreatments:any)
 {
     var treatments: any = {};
-    var result: any[] = [];
+    var result: OncoKbTreatment[] = [];
 
     _.each(evidenceTreatments, function(content, type) {
         _.each(content, function(item, index) {
@@ -414,7 +393,7 @@ export function generateTreatments(evidenceTreatments:any)
             var _treatment = treatmentsToStr(item.content);
             var _tumorType = item.tumorType;
             var _alterations = item.alterations.map(function(alt:any) {
-                return alt.alteration;
+                return alt.name;
             }).join(',');
             if (!treatments.hasOwnProperty(_level)) {
                 treatments[_level] = {};
@@ -433,16 +412,17 @@ export function generateTreatments(evidenceTreatments:any)
                     tumorType: _tumorType,
                     alterations: item.alterations,
                     level: _level,
+                    description: item.description,
                     treatment: _treatment
                 };
+            } else {
+                treatments[_level][_alterations][_treatment][_tumorType].description = [treatments[_level][_alterations][_treatment][_tumorType].description, '<br/>', item.description].join();
             }
             treatments[_level][_alterations][_treatment][_tumorType].articles = _.union(treatments[_level][_alterations][_treatment][_tumorType].articles, item.articles);
         });
     });
 
-    _.each(_.keys(treatments).sort(function(a, b) {
-        return LEVELS.all.indexOf(a) > LEVELS.all.indexOf(b) ? -1 : 1;
-    }), function(level) {
+    _.each(_.keys(treatments).sort(levelComparator), function(level) {
         _.each(_.keys(treatments[level]).sort(), function(_alteration) {
             _.each(_.keys(treatments[level][_alteration]).sort(), function(_treatment) {
                 _.each(_.keys(treatments[level][_alteration][_treatment]).sort(), function(_tumorType) {
@@ -450,7 +430,7 @@ export function generateTreatments(evidenceTreatments:any)
                     result.push({
                         level: content.level,
                         variant: content.alterations.map(function(alteration:any) {
-                            return alteration.alteration;
+                            return alteration.name;
                         }),
                         treatment: _treatment,
                         pmids: content.articles.filter(function(article:any) {
@@ -466,6 +446,7 @@ export function generateTreatments(evidenceTreatments:any)
                                 link: article.link
                             };
                         }),
+                        description: content.description,
                         cancerType: content.tumorType
                     });
                 });
@@ -476,6 +457,10 @@ export function generateTreatments(evidenceTreatments:any)
     return result;
 }
 
+export function levelComparator(a: string, b: string) {
+    return LEVELS.all.indexOf(a) > LEVELS.all.indexOf(b) ? -1 : 1;
+}
+
 function treatmentsToStr(data:any[]) {
     if (_.isArray(data)) {
         var treatments:any[] = [];
@@ -484,7 +469,7 @@ function treatmentsToStr(data:any[]) {
             treatments.push(drugToStr((treatment.drugs)));
         });
 
-        return treatments.join(', ');
+        return treatments.sort().join(', ');
     }
     else {
         return "";
@@ -498,7 +483,7 @@ function drugToStr(data:any) {
         drugs.push(drug.drugName);
     });
 
-    return drugs.join('+');
+    return drugs.sort().join(' + ');
 }
 
 function getLevel(level:string) {

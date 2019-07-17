@@ -1,8 +1,9 @@
 import { assert } from 'chai';
 import React from 'react';
+import * as _ from 'lodash';
 import {
     calculateAssociation, countOccurences, calculatePValue, calculateLogOddsRatio, getMutuallyExclusiveCounts,
-    getCountsText, getData, getFilteredData, formatPValue, formatPValueWithStyle, formatLogOddsRatio, calculateAdjustedPValue
+    getTrackPairsCountText, getData, getFilteredData, formatPValue, formatQValueWithStyle, formatLogOddsRatio, calculateAdjustedPValue, AlteredStatus
 } from "./MutualExclusivityUtil";
 import { MutualExclusivity } from "../../../shared/model/MutualExclusivity";
 import expect from 'expect';
@@ -15,84 +16,84 @@ expect.extend(expectJSX);
 
 const exampleData = [
     {
-        "geneA": "EGFR",
-        "geneB": "KRAS",
+        "trackA": "EGFR",
+        "trackB": "KRAS",
         "neitherCount": 0,
         "aNotBCount": 5,
         "bNotACount": 5,
         "bothCount": 0,
         "logOddsRatio": -Infinity,
         "pValue": 0.003968253968253951,
-        "adjustedPValue": 0.023809523809523704,
+        "qValue": 0.023809523809523704,
         "association": "Mutual exclusivity"
     },
     {
-        "geneA": "TP53",
-        "geneB": "BRAF",
+        "trackA": "TP53",
+        "trackB": "BRAF",
         "neitherCount": 6,
         "aNotBCount": 0,
         "bNotACount": 1,
         "bothCount": 3,
         "logOddsRatio": Infinity,
         "pValue": 0.03333333333333314,
-        "adjustedPValue": 0.19999999999999885,
+        "qValue": 0.09999999999999942,
         "association": "Co-occurrence"
     },
     {
-        "geneA": "EGFR",
-        "geneB": "TP53",
+        "trackA": "EGFR",
+        "trackB": "TP53",
         "neitherCount": 2,
         "aNotBCount": 5,
         "bNotACount": 3,
         "bothCount": 0,
         "logOddsRatio": -Infinity,
         "pValue": 0.08333333333333293,
-        "adjustedPValue": 0.49999999999999756,
+        "qValue": 0.12499999999999939,
         "association": "Mutual exclusivity"
     },
     {
-        "geneA": "KRAS",
-        "geneB": "TP53",
+        "trackA": "KRAS",
+        "trackB": "TP53",
         "neitherCount": 5,
         "aNotBCount": 2,
         "bNotACount": 0,
         "bothCount": 3,
         "logOddsRatio": Infinity,
         "pValue": 0.08333333333333293,
-        "adjustedPValue": 0.49999999999999756,
+        "qValue": 0.12499999999999939,
         "association": "Co-occurrence"
     },
     {
-        "geneA": "EGFR",
-        "geneB": "BRAF",
+        "trackA": "EGFR",
+        "trackB": "BRAF",
         "neitherCount": 2,
         "aNotBCount": 4,
         "bNotACount": 3,
         "bothCount": 1,
-        "logOddsRatio": -1.791759469228055,
+        "logOddsRatio": -2.584962500721156,
         "pValue": 0.2619047619047609,
-        "adjustedPValue": 1,
+        "qValue": 0.2619047619047609,
         "association": "Mutual exclusivity"
     },
     {
-        "geneA": "KRAS",
-        "geneB": "BRAF",
+        "trackA": "KRAS",
+        "trackB": "BRAF",
         "neitherCount": 4,
         "aNotBCount": 2,
         "bNotACount": 1,
         "bothCount": 3,
-        "logOddsRatio": 1.791759469228055,
+        "logOddsRatio": 2.584962500721156,
         "pValue": 0.2619047619047609,
-        "adjustedPValue": 1,
+        "qValue": 0.2619047619047609,
         "association": "Co-occurrence"
     }
 ];
 
 const isSampleAlteredMap: any = {
-    "EGFR": [true, false, true, true, false, false, true, true, false, false],
-    "KRAS": [false, true, false, false, true, true, false, false, true, true],
-    "TP53": [false, false, false, false, false, true, false, false, true, true],
-    "BRAF": [false, false, false, true, false, true, false, false, true, true]
+    "EGFR": [AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED],
+    "KRAS": [AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.ALTERED],
+    "TP53": [AlteredStatus.UNALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.ALTERED],
+    "BRAF": [AlteredStatus.UNALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.ALTERED]
 };
 
 describe("MutualExclusivityUtil", () => {
@@ -111,17 +112,30 @@ describe("MutualExclusivityUtil", () => {
     });
 
     describe("#countOccurences()", () => {
-        it("returns [1, 0, 0, 1] for [false, true] and [false, true]", () => {
-            assert.deepEqual(countOccurences([false, true], [false, true]), [1, 0, 0, 1]);
+        it("returns [1, 0, 0, 1] for [AlteredStatus.UNALTERED, AlteredStatus.ALTERED] and [AlteredStatus.UNALTERED, AlteredStatus.ALTERED]", () => {
+            assert.deepEqual(countOccurences([AlteredStatus.UNALTERED, AlteredStatus.ALTERED], [AlteredStatus.UNALTERED, AlteredStatus.ALTERED]), [1, 0, 0, 1]);
         });
 
-        it("returns [1, 1, 1, 1] for [false, true, false, true] and [false, true, true, false]", () => {
-            assert.deepEqual(countOccurences([false, true, false, true], [false, true, true, false]), [1, 1, 1, 1]);
+        it("returns [1, 1, 1, 1] for [AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.ALTERED] and [AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED]", () => {
+            assert.deepEqual(countOccurences([AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.ALTERED], [AlteredStatus.UNALTERED, AlteredStatus.ALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED]), [1, 1, 1, 1]);
         });
 
-        it("returns [2, 0, 0, 0] for [false, false] and [false, false]", () => {
-            assert.deepEqual(countOccurences([false, false], [false, false]), [2, 0, 0, 0]);
+        it("returns [2, 0, 0, 0] for [AlteredStatus.UNALTERED, AlteredStatus.UNALTERED] and [AlteredStatus.UNALTERED, AlteredStatus.UNALTERED]", () => {
+            assert.deepEqual(countOccurences([AlteredStatus.UNALTERED, AlteredStatus.UNALTERED], [AlteredStatus.UNALTERED, AlteredStatus.UNALTERED]), [2, 0, 0, 0]);
         });
+
+        it("returns [1, 0, 1, 1] for [AlteredStatus.UNPROFILED, AlteredStatus.UNPROFILED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED] and [AlteredStatus.ALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED]", () => {
+            assert.deepEqual(countOccurences([AlteredStatus.UNPROFILED, AlteredStatus.UNPROFILED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED], [AlteredStatus.ALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED]), [1, 0, 1, 0]);
+        });
+
+        it("returns [0, 0, 0, 0] for [AlteredStatus.UNPROFILED, AlteredStatus.UNPROFILED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED] and [AlteredStatus.ALTERED, AlteredStatus.ALTERED, AlteredStatus.UNPROFILED, AlteredStatus.UNPROFILED]", () => {
+            assert.deepEqual(countOccurences([AlteredStatus.UNPROFILED, AlteredStatus.UNPROFILED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED], [AlteredStatus.ALTERED, AlteredStatus.ALTERED, AlteredStatus.UNPROFILED, AlteredStatus.UNPROFILED]), [0, 0, 0, 0]);
+        });
+        
+        it("returns [0, 0, 0, 0] for [AlteredStatus.UNPROFILED, AlteredStatus.UNPROFILED, AlteredStatus.UNPROFILED, AlteredStatus.UNPROFILED] and [AlteredStatus.ALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED]", () => {
+            assert.deepEqual(countOccurences([AlteredStatus.UNPROFILED, AlteredStatus.UNPROFILED, AlteredStatus.UNPROFILED, AlteredStatus.UNPROFILED], [AlteredStatus.ALTERED, AlteredStatus.ALTERED, AlteredStatus.UNALTERED, AlteredStatus.UNALTERED]), [0, 0, 0, 0]);
+        });
+
     });
 
     describe("#calculatePValue()", () => {
@@ -134,7 +148,7 @@ describe("MutualExclusivityUtil", () => {
         });
     });
 
-    describe("#calculateAdjustedPValue()", () => {
+/*     describe("#calculateAdjustedPValue()", () => {
         it("returns 1 if bigger than 1", () => {
             assert.equal(calculateAdjustedPValue(0.345, 4), 1);
         });
@@ -142,15 +156,15 @@ describe("MutualExclusivityUtil", () => {
         it("returns the value if smaller than 1", () => {
             assert.equal(calculateAdjustedPValue(0.001, 3), 0.003);
         });
-    });
+    }); */
 
     describe("#calculateLogOddsRatio()", () => {
-        it("returns -0.9650808960435872 for 4, 3, 7, 2", () => {
-            assert.equal(calculateLogOddsRatio(4, 3, 7, 2), -0.9650808960435872);
+        it("returns -1.3923174227787605 for 4, 3, 7, 2", () => {
+            assert.equal(calculateLogOddsRatio(4, 3, 7, 2), -1.3923174227787605);
         });
 
-        it("returns 1.466337068793427 for 13, 7, 3, 7", () => {
-            assert.equal(calculateLogOddsRatio(13, 7, 3, 7), 1.466337068793427);
+        it("returns 2.1154772174199357 for 13, 7, 3, 7", () => {
+            assert.equal(calculateLogOddsRatio(13, 7, 3, 7), 2.1154772174199357);
         });
 
         it("returns Infinity for 5, 0 ,1, 0", () => {
@@ -158,7 +172,7 @@ describe("MutualExclusivityUtil", () => {
         });
     });
 
-    describe("#getMutuallyExclusiveCounts()", () => {
+/*     describe("#getMutuallyExclusiveCounts()", () => {
         it("returns [<span><b>no</b> gene pair</span>, null] for empty list", () => {
             const data: MutualExclusivity[] = [];
             const result = getMutuallyExclusiveCounts(data, n => n <= 0);
@@ -169,15 +183,15 @@ describe("MutualExclusivityUtil", () => {
         it("returns [<span><b>no</b> gene pair</span>, null] for 0 matched data", () => {
             const data: MutualExclusivity[] = [
                 {
-                    "geneA": "EGFR",
-                    "geneB": "KRAS",
+                    "trackA": "EGFR",
+                    "trackB": "KRAS",
                     "neitherCount": 0,
                     "aNotBCount": 5,
                     "bNotACount": 5,
                     "bothCount": 0,
                     "logOddsRatio": Infinity,
                     "pValue": 0.003968253968253968,
-                    "adjustedPValue": 0.003968253968253968,
+                    "qValue": 0.003968253968253968,
                     "association": "Co-occurrence"
                 }
             ];
@@ -191,15 +205,15 @@ describe("MutualExclusivityUtil", () => {
 
                 const data: MutualExclusivity[] = [
                     {
-                        "geneA": "EGFR",
-                        "geneB": "KRAS",
+                        "trackA": "EGFR",
+                        "trackB": "KRAS",
                         "neitherCount": 0,
                         "aNotBCount": 5,
                         "bNotACount": 5,
                         "bothCount": 0,
                         "logOddsRatio": -2.1,
                         "pValue": 0.06,
-                        "adjustedPValue": 0.06,
+                        "qValue": 0.06,
                         "association": "Mutual exclusivity"
                     }
                 ];
@@ -213,15 +227,15 @@ describe("MutualExclusivityUtil", () => {
 
                 const data: MutualExclusivity[] = [
                     {
-                        "geneA": "EGFR",
-                        "geneB": "KRAS",
+                        "trackA": "EGFR",
+                        "trackB": "KRAS",
                         "neitherCount": 0,
                         "aNotBCount": 5,
                         "bNotACount": 5,
                         "bothCount": 0,
                         "logOddsRatio": -2.1,
                         "pValue": 0.04,
-                        "adjustedPValue": 0.04,
+                        "qValue": 0.04,
                         "association": "Mutual exclusivity"
                     }
                 ];
@@ -235,27 +249,27 @@ describe("MutualExclusivityUtil", () => {
 
                 const data: MutualExclusivity[] = [
                     {
-                        "geneA": "EGFR",
-                        "geneB": "KRAS",
+                        "trackA": "EGFR",
+                        "trackB": "KRAS",
                         "neitherCount": 0,
                         "aNotBCount": 5,
                         "bNotACount": 5,
                         "bothCount": 0,
                         "logOddsRatio": -6.51,
                         "pValue": 0.02,
-                        "adjustedPValue": 0.04,
+                        "qValue": 0.04,
                         "association": "Mutual exclusivity"
                     },
                     {
-                        "geneA": "EGFR",
-                        "geneB": "TP53",
+                        "trackA": "EGFR",
+                        "trackB": "TP53",
                         "neitherCount": 2,
                         "aNotBCount": 5,
                         "bNotACount": 3,
                         "bothCount": 0,
                         "logOddsRatio": -2.1,
                         "pValue": 0.001,
-                        "adjustedPValue": 0.002,
+                        "qValue": 0.002,
                         "association": "Mutual exclusivity"
                     }
                 ];
@@ -263,41 +277,12 @@ describe("MutualExclusivityUtil", () => {
                 expect(result[0]).toEqualJSX(<span><b>2</b> gene pairs</span>);
                 expect(result[1]).toEqualJSX(<span> (<b>2</b> significant)</span>);
             });
-    });
+    }); */
 
     describe("#getCountsText()", () => {
         it("returns correct text", () => {
-
-            const data: MutualExclusivity[] = [
-                {
-                    "geneA": "EGFR",
-                    "geneB": "KRAS",
-                    "neitherCount": 0,
-                    "aNotBCount": 5,
-                    "bNotACount": 5,
-                    "bothCount": 0,
-                    "logOddsRatio": -6.51,
-                    "pValue": 0.02,
-                    "adjustedPValue": 0.04,
-                    "association": "Mutual exclusivity"
-                },
-                {
-                    "geneA": "EGFR",
-                    "geneB": "TP53",
-                    "neitherCount": 2,
-                    "aNotBCount": 5,
-                    "bNotACount": 3,
-                    "bothCount": 0,
-                    "logOddsRatio": -2.1,
-                    "pValue": 0.001,
-                    "adjustedPValue": 0.002,
-                    "association": "Mutual exclusivity"
-                }
-            ];
-            const result = getCountsText(data);
-            expect(result).toEqualJSX(<p>The query contains <span><b>2</b> gene pairs</span> with mutually exclusive
-                alterations<span> (<b>2</b> significant)</span>, and <span><b>no</b> gene pair</span> with co-occurrent
-                alterations.</p>);
+            const result = getTrackPairsCountText(exampleData, _.size(isSampleAlteredMap));
+            expect(result).toEqualJSX(<p>The analysis tested <b>6</b> pairs between the <b>4</b> tracks in the OncoPrint.</p>);
         });
     });
 
@@ -311,20 +296,20 @@ describe("MutualExclusivityUtil", () => {
 
     describe("#getFilteredData()", () => {
         it("returns the data correctly", () => {
-
+            
             const result = getFilteredData(exampleData, true, false, true);
             assert.deepEqual(result,
                 [
                     {
-                        "geneA": "EGFR",
-                        "geneB": "KRAS",
+                        "trackA": "EGFR",
+                        "trackB": "KRAS",
                         "neitherCount": 0,
                         "aNotBCount": 5,
                         "bNotACount": 5,
                         "bothCount": 0,
                         "logOddsRatio": -Infinity,
                         "pValue": 0.003968253968253951,
-                        "adjustedPValue": 0.023809523809523704,
+                        "qValue": 0.023809523809523704,
                         "association": "Mutual exclusivity"
                     }
                 ]
@@ -352,11 +337,11 @@ describe("MutualExclusivityUtil", () => {
 
     describe("#formatPValueWithStyle()", () => {
         it("returns <span>0.050</span> for 0.05", () => {
-            expect(formatPValueWithStyle(0.05)).toEqualJSX(<span>0.050</span>);
+            expect(formatQValueWithStyle(0.05)).toEqualJSX(<span>0.050</span>);
         });
 
         it("returns <b><span>0.042</span></b> for 0.042", () => {
-            expect(formatPValueWithStyle(0.042)).toEqualJSX(<b><span>0.042</span></b>);
+            expect(formatQValueWithStyle(0.042)).toEqualJSX(<b><span>0.042</span></b>);
         });
     });
 
@@ -387,27 +372,27 @@ describe("MutualExclusivityUtil", () => {
 
             const data = [
                 {
-                    "geneA": "KRAS",
-                    "geneB": "BRAF",
+                    "trackA": "KRAS",
+                    "trackB": "BRAF",
                     "neitherCount": 4,
                     "aNotBCount": 2,
                     "bNotACount": 1,
                     "bothCount": 3,
                     "logOddsRatio": 1.791759469228055,
                     "pValue": 0.23809523809523808,
-                    "adjustedPValue": 0.47619047619047616,
+                    "qValue": 0.47619047619047616,
                     "association": "Co-occurrence"
                 },
                 {
-                    "geneA": "TP53",
-                    "geneB": "BRAF",
+                    "trackA": "TP53",
+                    "trackB": "BRAF",
                     "neitherCount": 6,
                     "aNotBCount": 0,
                     "bNotACount": 1,
                     "bothCount": 3,
                     "logOddsRatio": Infinity,
                     "pValue": 0.003968253968253951,
-                    "adjustedPValue": 0.023809523809523704,
+                    "qValue": 0.023809523809523704,
                     "association": "Co-occurrence"
                 }
             ];
@@ -423,8 +408,8 @@ describe("MutualExclusivityUtil", () => {
             assert.equal(cells.at(6).html(), "<td><span>&gt;3</span></td>");
             assert.equal(cells.at(7).html(), "<td><span>0.004</span></td>");
             assert.equal(cells.at(8).html(), "<td><b><span>0.024</span></b></td>");
-            assert.equal(cells.at(9).html().replace(/<!--[^>]*-->/g, ""), "<td><div class=\"styles-module__Tendency__2Y46X\">" + 
-                "Co-occurrence<span class=\"badge\" style=\"background-color: rgb(88, 172, 250);\">Significant</span></div></td>");
+            assert.equal(cells.at(9).html().replace(/<!--[^>]*-->/g, ""), "<td><div class=\"styles-module__Tendency__2Y46X styles-module__Significant__34YnP\">" +
+                "Co-occurrence</div></td>");
             assert.equal(cells.at(19).html().replace(/<!--[^>]*-->/g, ""), "<td><div class=\"styles-module__Tendency__2Y46X\">Co-occurrence</div></td>");
         });
     });

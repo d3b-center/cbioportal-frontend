@@ -31,11 +31,28 @@ export declare function isMergedTrackFilter<T>(
     oqlFilter: UnflattenedOQLLineFilterOutput<T>
 ): oqlFilter is MergedTrackLineFilterOutput<T>;
 
+export declare function uniqueGenesInOQLQuery(
+    oql_query:string
+):string[];
+
 /* Interprets datatypes statements and flattens out merged track queries. */
 export declare function parseOQLQuery(
     oql_query: string,
     opt_default_oql?: OQLAlterationFilterString
 ): SingleGeneQuery[];
+
+export declare function unparseOQLQueryLine(
+    parsed_oql_line:SingleGeneQuery
+): string;
+
+
+export declare function doesQueryContainOQL(
+    oql_query:string
+):boolean;
+
+export declare function doesQueryContainMutationOQL(
+    oql_query:string
+):boolean;
 
 export declare function filterCBioPortalWebServiceData(oql_query:string, data:(Mutation | NumericGeneMolecularData)[], accessors:any, default_oql:string): ExtendedAlteration[];
 

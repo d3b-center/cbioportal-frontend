@@ -1,6 +1,5 @@
 import { assert } from 'chai';
-import {indexHotspots} from "./CancerHotspotsUtils";
-import {IHotspotIndex} from "shared/model/CancerHotspots";
+import {IHotspotIndex, indexHotspots} from "react-mutation-mapper";
 import {isRecurrentHotspot, is3dHotspot} from './AnnotationUtils';
 import {initMutation} from "test/MutationMockUtils";
 
@@ -89,6 +88,13 @@ describe('AnnotationUtils', () => {
                 referenceAllele: "A",
                 variantAllele: "T"
             },
+            transcriptId: '',
+            proteinLocation: {
+                transcriptId: '',
+                start: 0,
+                end: 0,
+                mutationType: ''
+            },
             variant: "17:g.66A>T",
             hotspots: [
                 {
@@ -96,6 +102,10 @@ describe('AnnotationUtils', () => {
                     transcriptId: "ENST00002",
                     tumorCount: 1,
                     tumorTypeCount: 1,
+                    inframeCount: 0,
+                    missenseCount: 1,
+                    spliceCount: 0,
+                    truncatingCount: 0,
                     hugoSymbol: "TP53",
                     residue: "R273",
                     aminoAcidPosition: {
@@ -113,12 +123,23 @@ describe('AnnotationUtils', () => {
                 referenceAllele: "G",
                 variantAllele: "CAT"
             },
+            transcriptId: '',
+            proteinLocation: {
+                transcriptId: '',
+                start: 0,
+                end: 0,
+                mutationType: ''
+            },
             variant: "3:g.666G>CAT",
             hotspots: [
                 {
                     type: "in-frame indel",
                     tumorCount: 1,
                     tumorTypeCount: 1,
+                    inframeCount: 1,
+                    missenseCount: 0,
+                    spliceCount: 0,
+                    truncatingCount: 0,
                     transcriptId: "ENST00003",
                     hugoSymbol: "PIK3CA",
                     residue: "38-40",
@@ -140,12 +161,23 @@ describe('AnnotationUtils', () => {
                 referenceAllele: "T",
                 variantAllele: "C"
             },
+            transcriptId: '',
+            proteinLocation: {
+                transcriptId: '',
+                start: 0,
+                end: 0,
+                mutationType: ''
+            },
             variant: "4:g.111T>C",
             hotspots: [
                 {
                     type: "3d",
                     tumorCount: 1,
                     tumorTypeCount: 1,
+                    inframeCount: 0,
+                    missenseCount: 1,
+                    spliceCount: 0,
+                    truncatingCount: 0,
                     transcriptId: "ENST00005",
                     hugoSymbol: "SMURF1",
                     residue: "R101",

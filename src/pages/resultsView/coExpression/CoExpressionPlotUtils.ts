@@ -15,6 +15,10 @@ export function getUniquePrecision(value:number, allValues:number[], maxPrecisio
     return precision;
 }
 
-export function axisLabel(gene:{hugoGeneSymbol:string, cytoband:string}, logScale:boolean) {
-    return `${gene.hugoGeneSymbol} ${logScale ? "(log10) " : ""}(Cytoband: ${gene.cytoband})`
+export function axisLabel(geneticEntity:{geneticEntityName:string}, logScale:boolean, profileName:string) {
+    return `${profileName}: ${geneticEntity.geneticEntityName} ${logScale ? "(log2) " : ""}`;
+}
+
+export function isNotProfiled(d:{profiledX:boolean, profiledY:boolean}) {
+    return !d.profiledX && !d.profiledY;
 }
